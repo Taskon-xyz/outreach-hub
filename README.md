@@ -20,23 +20,19 @@ X DM 发送需要通过 Chrome 浏览器完成，请先安装：
 
 [下载 Google Chrome](https://www.google.com/chrome/)
 
-### 2. 获取代码
+### 2. 一键安装
+
+复制以下命令到终端运行：
 
 ```bash
-git clone <repo-url> outreach-hub
-cd outreach-hub
-```
-
-### 3. 一键安装
-
-```bash
-bash scripts/install.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/Taskon-xyz/outreach-hub/main/scripts/install.sh)
 ```
 
 这个脚本会自动完成以下所有步骤：
 
 | 步骤 | 说明 |
 |------|------|
+| 克隆代码 | 从 GitHub 拉取最新代码 |
 | 检查 Chrome | 确认已安装 Google Chrome |
 | 安装 uv | 如果没有 uv，自动下载安装 |
 | 安装 Python | 通过 uv 下载 Python 3.11（不需要系统自带 Python） |
@@ -51,12 +47,14 @@ bash scripts/install.sh
 日常启动只需要一个命令：
 
 ```bash
+cd outreach-hub
 ./scripts/start_chrome_cdp.sh
 ```
 
 或者使用 Web UI：
 
 ```bash
+cd outreach-hub
 uv run python web_server.py
 ```
 
