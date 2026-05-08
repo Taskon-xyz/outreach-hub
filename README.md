@@ -14,23 +14,51 @@ Web3 项目自动化触达工具。从多种数据源导入项目信息，自动
 
 ## 安装
 
-### 前置要求
+### 1. 安装 Google Chrome
 
-- macOS 或 Windows
-- [Google Chrome](https://www.google.com/chrome/)（X DM 发送需要）
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+X DM 发送需要通过 Chrome 浏览器完成，请先安装：
 
-### 安装步骤
+[下载 Google Chrome](https://www.google.com/chrome/)
+
+### 2. 获取代码
 
 ```bash
 git clone <repo-url> outreach-hub
 cd outreach-hub
-./scripts/install_browsers.sh
 ```
 
-这个脚本会自动完成：Python 环境安装、所有依赖安装、Playwright 浏览器引擎安装、环境验证。
+### 3. 一键安装
 
-**只需运行一次。**
+```bash
+bash scripts/install.sh
+```
+
+这个脚本会自动完成以下所有步骤：
+
+| 步骤 | 说明 |
+|------|------|
+| 检查 Chrome | 确认已安装 Google Chrome |
+| 安装 uv | 如果没有 uv，自动下载安装 |
+| 安装 Python | 通过 uv 下载 Python 3.11（不需要系统自带 Python） |
+| 安装依赖 | `uv sync` 安装所有 pip 包 |
+| 安装浏览器引擎 | `playwright install chromium` 用于网站爬取 |
+| 环境验证 | 检查 tkinter、customtkinter、playwright 是否可用 |
+
+整个过程大约 2-3 分钟，取决于网速。**只需运行一次。**
+
+### 安装完成后
+
+日常启动只需要一个命令：
+
+```bash
+./scripts/start_chrome_cdp.sh
+```
+
+或者使用 Web UI：
+
+```bash
+uv run python web_server.py
+```
 
 ## 使用
 
@@ -96,7 +124,8 @@ outreach-hub/
   gui/                 # 桌面 GUI 标签页
   web/                 # Web UI 前端
   scripts/
-    install_browsers.sh  # 一次性环境安装
-    start_chrome_cdp.sh  # 日常启动（Chrome + GUI）
+    install.sh             # 一键安装（给新同事用）
+    install_browsers.sh    # 环境准备（install.sh 内部调用）
+    start_chrome_cdp.sh    # 日常启动（Chrome + GUI）
   data/                # 数据库、session（自动创建，不入版本控制）
 ```
