@@ -1,0 +1,41 @@
+# Runtime data
+data/
+
+# Browser sessions
+twitter_pw_session/
+twitter_ff_session/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Backups
+*.bak
+*.bak2
+
+# Logs
+*.log
+
+# Screenshots
+*.png
+!ocr_compare_screenshot.png
+
+# Credentials
+credentials.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+venv/
+.env/

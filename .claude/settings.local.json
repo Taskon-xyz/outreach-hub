@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\('gui/tab_scraper.py', encoding='utf-8'\\).read\\(\\)\\); print\\('语法检查通过'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('db.py', encoding='utf-8'\\).read\\(\\)\\); print\\('db.py 语法检查通过'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('db.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('workers/scraper_worker.py', encoding='utf-8'\\).read\\(\\)\\); print\\('语法OK'\\)\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from workers.scraper_worker import ScraperWorker; print\\('导入OK:', ScraperWorker.__name__\\)\")",
+      "Bash(timeout 120 python -c ' *)",
+      "Bash(timeout 60 python -c ' *)",
+      "Bash(cd /d C:\\\\Users\\\\xiaod\\\\desktop\\\\auto\\\\outreach-hub)",
+      "Bash(python -c \"from workers.scraper_worker import ScraperWorker; print\\('import OK'\\)\")"
+    ]
+  }
+}
