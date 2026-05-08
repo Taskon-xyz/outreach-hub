@@ -76,7 +76,7 @@ class XSenderPWWorker(BaseWorker):
     async def _launch_browser(self, p, browser_type):
         """
         启动浏览器，返回 (page, context, need_close)。
-        三种模式：Chrome CDP > Chrome persistent > Firefox persistent
+        两种模式：Chrome CDP > Chrome persistent
         """
         # ── 模式 1：Chrome CDP（连接已打开的 Chrome，零检测风险）───────────
         if browser_type == "chrome":
@@ -114,23 +114,8 @@ class XSenderPWWorker(BaseWorker):
                 return page, context, True
             except Exception as e:
                 self.log(f"[浏览器] Chrome 启动失败（{str(e)[:60]}）")
-
-        # ── 模式 3：Firefox persistent context ───────────────────────────
-        try:
-            self.log("[浏览器] 启动 Firefox（persistent context）...")
-            ff_dir = os.path.join(config.DATA_DIR, "twitter_ff_session")
-            os.makedirs(ff_dir, exist_ok=True)
-            context = await p.firefox.launch_persistent_context(
-                ff_dir,
-                headless=False,
-                viewport={"width": 1440, "height": 900},
-            )
-            page = context.pages[0] if context.pages else await context.new_page()
-            return page, context, True
-        except Exception as e:
-            self.log(f"[浏览器] Firefox 启动失败（{str(e)[:60]}）")
-            self.log("请确保已安装浏览器：playwright install chromium && playwright install firefox")
-            return None, None, False
+                self.log("请确保已安装浏览器：playwright install chromium")
+                return None, None, False
 
     async def _send_loop(self, page):
         """主发送循环"""

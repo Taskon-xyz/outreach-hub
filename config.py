@@ -47,7 +47,6 @@ CHAT_POS_FILE = os.path.join(DATA_DIR, "chat_box_position.txt")
 
 # ── Twitter Playwright session（macOS）──────────────────────────────────────
 TWITTER_PW_DIR = os.path.join(DATA_DIR, "twitter_pw_session")
-# 浏览器选择：chrome | firefox（macOS Playwright 发送用）
 TWITTER_BROWSER = "chrome"
 
 # ── API 服务器（局域网客户端模式）───────────────────────────────────────────
