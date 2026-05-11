@@ -44,17 +44,17 @@ bash <(curl -fsSL https://raw.githubusercontent.com/lukezhao-tech/outreach-hub/m
 
 ### 安装完成后
 
-日常启动只需要一个命令：
+安装脚本结束时会自动进入 `outreach-hub` 目录。日常启动（每次新开终端后）：
 
 ```bash
-cd outreach-hub
+cd ~/outreach-hub
 ./scripts/start_chrome_cdp.sh
 ```
 
 或者使用 Web UI：
 
 ```bash
-cd outreach-hub
+cd ~/outreach-hub
 uv run python web_server.py
 ```
 

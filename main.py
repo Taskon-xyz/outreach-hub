@@ -27,5 +27,10 @@ from gui.app import App
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    app = App()
-    app.mainloop()
+    try:
+        app = App()
+        app.mainloop()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
