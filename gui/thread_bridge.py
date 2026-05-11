@@ -16,7 +16,12 @@ def drain(root) -> None:
     """必须在主线程调用。排干当前队列，然后重新调度自身。"""
     try:
         while True:
-            _ui_queue.get_nowait()()
+            fn = _ui_queue.get_nowait()
+            try:
+                fn()
+            except Exception:
+                import traceback
+                traceback.print_exc()
     except _q.Empty:
         pass
     root.after(50, drain, root)
