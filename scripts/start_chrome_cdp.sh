@@ -8,14 +8,14 @@ PORT=9222
 USER_DATA="/tmp/chrome-debug"
 
 # -- 1. 清理旧 CDP 进程 -------------------------------------------------------
-PID=$(lsof -ti :$PORT 2>/dev/null || true)
-if [ -n "$PID" ]; then
-    echo "端口 $PORT 已被占用（PID: $PID），正在关闭..."
-    kill $PID 2>/dev/null || true
+PIDS=$(lsof -ti :$PORT 2>/dev/null || true)
+if [ -n "$PIDS" ]; then
+    echo "端口 $PORT 已被占用（PID: $(echo $PIDS | tr '\n' ' ')），正在关闭..."
+    echo "$PIDS" | xargs kill 2>/dev/null || true
     sleep 1
     if lsof -ti :$PORT &>/dev/null; then
         echo "端口仍被占用，强制关闭..."
-        kill -9 $(lsof -ti :$PORT) 2>/dev/null || true
+        lsof -ti :$PORT | xargs kill -9 2>/dev/null || true
         sleep 1
     fi
 fi
