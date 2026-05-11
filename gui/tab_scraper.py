@@ -14,7 +14,9 @@ from workers.rootdata_worker            import RootDataWorker
 from workers.chainscope_worker          import ChainScopeWorker
 from workers.token_finder_worker        import TokenFinderWorker
 from workers.campaign_worker             import CampaignWorker
+from workers.cryptorank_worker           import CryptoRankWorker
 import db
+from gui.thread_bridge import enqueue
 
 
 class SourceTagSelector(ctk.CTkFrame):
@@ -104,6 +106,12 @@ SOURCES = [
         "sub":  "project_handle 字段",
         "panel": "_build_ck_panel",
     },
+    {
+        "id": "cr",
+        "name": "CryptoRank → 官网+X+TG",
+        "sub":  "Funding Rounds 列表",
+        "panel": "_build_cr_panel",
+    },
 ]
 
 # 每个面板的 panel frame（由 _build_all_panels 创建后填充到右侧）
@@ -116,6 +124,7 @@ class ScraperTab:
         self.parent     = parent
         self.cb_worker = None
         self.rd_worker = None
+        self.cr_worker = None
         self.sc_worker = None
         self.cs_worker = None
         self.tf_worker = None
@@ -197,6 +206,7 @@ class ScraperTab:
         self._build_tf_panel(_panel_frames["tf"])
         self._build_ct_panel(_panel_frames["ct"])
         self._build_ck_panel(_panel_frames["ck"])
+        self._build_cr_panel(_panel_frames["cr"])
 
         # 默认选中第一个（官网爬虫，最核心）
         self._select_source(SOURCES[0])
@@ -204,7 +214,7 @@ class ScraperTab:
     def _refresh_all_tag_selectors(self):
         """运行完成后刷新所有 source tag 下拉列表"""
         for attr in ("cb_tag_entry", "rd_tag_entry", "cs_tag_entry",
-                     "tf_tag_entry", "ct_tag_entry", "ck_tag_entry"):
+                     "tf_tag_entry", "ct_tag_entry", "ck_tag_entry", "cr_tag_entry"):
             widget = getattr(self, attr, None)
             if widget:
                 widget.refresh_tags()
@@ -553,19 +563,138 @@ class ScraperTab:
             state="disabled", command=self._ck_stop)
         self.ck_btn_stop.pack(side="left", padx=3)
 
+    # ════════════════ CryptoRank 面板 ════════════════════════════════
+    def _build_cr_panel(self, parent):
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            parent,
+            text="从 CryptoRank Funding Rounds 逐页抓取项目，\n"
+                 "直接提取官网 + X 账号 + TG 群链接入库，无需再跑爬虫。\n"
+                 "浏览器打开后可手动导航到任意页，点「已就绪」开始抓取。",
+            text_color="gray", wraplength=400, justify="left"
+        ).pack(anchor="w", padx=14, pady=(10, 4))
+
+        url_row = ctk.CTkFrame(parent, fg_color="transparent")
+        url_row.pack(fill="x", padx=14, pady=(0, 2))
+        ctk.CTkLabel(url_row, text="起始URL：", width=62, anchor="w").pack(side="left")
+        self.cr_url_entry = ctk.CTkEntry(
+            url_row, placeholder_text="https://cryptorank.io/funding-rounds?page=1&rows=20")
+        self.cr_url_entry.pack(side="left", fill="x", expand=True)
+        self.cr_url_entry.insert(0, "https://cryptorank.io/funding-rounds?page=1&rows=20")
+
+        page_row = ctk.CTkFrame(parent, fg_color="transparent")
+        page_row.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(page_row, text="最大页数：", width=62, anchor="w").pack(side="left")
+        self.cr_max_pages = ctk.CTkEntry(page_row, width=70, placeholder_text="999")
+        self.cr_max_pages.pack(side="left")
+
+        tag_row = ctk.CTkFrame(parent, fg_color="transparent")
+        tag_row.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(tag_row, text="source tag：", width=62, anchor="w").pack(side="left")
+        self.cr_tag_entry = SourceTagSelector(
+            tag_row, placeholder_text="必填，如 cryptorank-2026q2")
+        self.cr_tag_entry.pack(side="left", fill="x", expand=True)
+
+        self.cr_lbl_count = ctk.CTkLabel(parent, text="", text_color="#4CAF50")
+        self.cr_lbl_count.pack(anchor="w", padx=14)
+        self._cr_refresh_count()
+
+        self.cr_log = ctk.CTkTextbox(parent, font=ctk.CTkFont(family="Consolas", size=11))
+        self.cr_log.pack(fill="both", expand=True, padx=10, pady=4)
+        self.cr_log.configure(state="disabled")
+
+        btn_row = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_row.pack(pady=6)
+        self.cr_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
+                                          width=80, command=self._cr_start)
+        self.cr_btn_start.pack(side="left", padx=3)
+        self.cr_btn_ready = ctk.CTkButton(
+            btn_row, text="✓ 已就绪", width=90,
+            fg_color="#2e7d32", hover_color="#1b5e20",
+            state="disabled", command=self._cr_ready)
+        self.cr_btn_ready.pack(side="left", padx=3)
+        self.cr_btn_stop = ctk.CTkButton(
+            btn_row, text="⏹ 停止", width=60,
+            fg_color="#c0392b", hover_color="#922b21",
+            state="disabled", command=self._cr_stop)
+        self.cr_btn_stop.pack(side="left", padx=3)
+
+    def _cr_log(self, msg):
+        def _do():
+            self.cr_log.configure(state="normal")
+            self.cr_log.insert("end", msg + "\n")
+            self.cr_log.see("end")
+            self.cr_log.configure(state="disabled")
+        enqueue(_do)
+
+    def _cr_refresh_count(self):
+        self.cr_lbl_count.configure(text=f"数据库已有项目：{db.count_projects()} 条")
+
+    def _cr_start(self):
+        tag = (self.cr_tag_entry.get() or "").strip()
+        if not tag:
+            self._cr_log("请填写 source tag（必填）")
+            return
+        if tag == "tg_left":
+            self._cr_log("source tag 不能为保留值 'tg_left'")
+            return
+        url = self.cr_url_entry.get().strip() or "https://cryptorank.io/funding-rounds?page=1&rows=20"
+        try:
+            max_pages = int(self.cr_max_pages.get() or 999)
+        except ValueError:
+            max_pages = 999
+
+        self.cr_btn_start.configure(state="disabled")
+        self.cr_btn_ready.configure(state="normal")
+        self.cr_btn_stop.configure(state="normal")
+        self.cr_log.configure(state="normal")
+        self.cr_log.delete("1.0", "end")
+        self.cr_log.configure(state="disabled")
+        self.cr_worker = CryptoRankWorker(
+            source_tag=tag,
+            log_callback=self._cr_log,
+            start_url=url,
+            max_pages=max_pages,
+        )
+        threading.Thread(target=self._cr_run, daemon=True).start()
+
+    def _cr_run(self):
+        self.cr_worker.run()
+        enqueue(lambda: self.cr_btn_start.configure(state="normal"))
+        enqueue(lambda: self.cr_btn_ready.configure(state="disabled"))
+        enqueue(lambda: self.cr_btn_stop.configure(state="disabled"))
+        enqueue(self._cr_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
+
+    def _cr_ready(self):
+        if self.cr_worker:
+            self.cr_worker.set_ready()
+        self.cr_btn_ready.configure(state="disabled")
+
+    def _cr_stop(self):
+        if self.cr_worker:
+            self.cr_worker.stop()
+        self.cr_btn_stop.configure(state="disabled")
+
     # ════════════════ Crunchbase 控制 ════════════════════════════════
     def _cb_log(self, msg):
-        self.cb_log.configure(state="normal")
-        self.cb_log.insert("end", msg + "\n")
-        self.cb_log.see("end")
-        self.cb_log.configure(state="disabled")
+        def _do():
+            self.cb_log.configure(state="normal")
+            self.cb_log.insert("end", msg + "\n")
+            self.cb_log.see("end")
+            self.cb_log.configure(state="disabled")
+        enqueue(_do)
 
     def _cb_progress_cb(self, cur, total):
-        if total:
-            self.cb_progress.set(cur / total)
-            self.cb_lbl_progress.configure(text=f"{cur} / {total}")
-        else:
-            self.cb_lbl_progress.configure(text=str(cur))
+        def _do():
+            if total:
+                self.cb_progress.set(cur / total)
+                self.cb_lbl_progress.configure(text=f"{cur} / {total}")
+            else:
+                self.cb_lbl_progress.configure(text=str(cur))
+        enqueue(_do)
 
     def _cb_refresh_count(self):
         self.cb_lbl_count.configure(text=f"数据库已有官网：{db.count_projects()} 条")
@@ -600,16 +729,16 @@ class ScraperTab:
 
     def _cb_run(self):
         import time; time.sleep(6)
-        self.cb_btn_login.configure(state="normal")
+        enqueue(lambda: self.cb_btn_login.configure(state="normal"))
         self._cb_log("浏览器已打开，请在 Crunchbase 中翻到目标起始页，然后点击「已就位，开始抓取」。")
         self.cb_worker.run()
-        self.cb_btn_start.configure(state="normal")
-        self.cb_btn_login.configure(state="disabled")
-        self.cb_btn_stop.configure(state="disabled")
-        self._cb_refresh_count()
-        self._cs_refresh_count()
-        self._sc_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.cb_btn_start.configure(state="normal"))
+        enqueue(lambda: self.cb_btn_login.configure(state="disabled"))
+        enqueue(lambda: self.cb_btn_stop.configure(state="disabled"))
+        enqueue(self._cb_refresh_count)
+        enqueue(self._cs_refresh_count)
+        enqueue(self._sc_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _cb_login_done(self):
         self._cb_login_event.set()
@@ -625,13 +754,15 @@ class ScraperTab:
 
     # ════════════════ RootData 控制 ══════════════════════════════════
     def _rd_log(self, msg):
-        self.rd_log.configure(state="normal")
-        self.rd_log.insert("end", msg + "\n")
-        self.rd_log.see("end")
-        self.rd_log.configure(state="disabled")
+        def _do():
+            self.rd_log.configure(state="normal")
+            self.rd_log.insert("end", msg + "\n")
+            self.rd_log.see("end")
+            self.rd_log.configure(state="disabled")
+        enqueue(_do)
 
     def _rd_progress_cb(self, cur, total):
-        self.rd_lbl_progress.configure(text=str(cur))
+        enqueue(lambda: self.rd_lbl_progress.configure(text=str(cur)))
 
     def _rd_refresh_count(self):
         self.rd_lbl_count.configure(text=f"数据库已有官网：{db.count_projects()} 条")
@@ -669,15 +800,15 @@ class ScraperTab:
 
     def _rd_run(self):
         import time; time.sleep(5)
-        self.rd_btn_ready.configure(state="normal")
+        enqueue(lambda: self.rd_btn_ready.configure(state="normal"))
         self.rd_worker.run()
-        self.rd_btn_start.configure(state="normal")
-        self.rd_btn_ready.configure(state="disabled")
-        self.rd_btn_stop.configure(state="disabled")
-        self._rd_refresh_count()
-        self._cs_refresh_count()
-        self._sc_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.rd_btn_start.configure(state="normal"))
+        enqueue(lambda: self.rd_btn_ready.configure(state="disabled"))
+        enqueue(lambda: self.rd_btn_stop.configure(state="disabled"))
+        enqueue(self._rd_refresh_count)
+        enqueue(self._cs_refresh_count)
+        enqueue(self._sc_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _rd_ready(self):
         if self.rd_worker:
@@ -693,10 +824,12 @@ class ScraperTab:
 
     # ════════════════ Old汤-链上 控制 ══════════════════════════════════
     def _cs_log(self, msg):
-        self.cs_log.configure(state="normal")
-        self.cs_log.insert("end", msg + "\n")
-        self.cs_log.see("end")
-        self.cs_log.configure(state="disabled")
+        def _do():
+            self.cs_log.configure(state="normal")
+            self.cs_log.insert("end", msg + "\n")
+            self.cs_log.see("end")
+            self.cs_log.configure(state="disabled")
+        enqueue(_do)
 
     def _cs_refresh_count(self):
         self.cs_lbl_count.configure(text=f"数据库已有官网：{db.count_projects()} 条")
@@ -723,14 +856,14 @@ class ScraperTab:
 
     def _cs_run(self):
         self.cs_worker.run()
-        self.cs_btn_start.configure(state="normal")
-        self.cs_btn_stop.configure(state="disabled")
-        self._cs_refresh_count()
-        self._sc_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.cs_btn_start.configure(state="normal"))
+        enqueue(lambda: self.cs_btn_stop.configure(state="disabled"))
+        enqueue(self._cs_refresh_count)
+        enqueue(self._sc_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _cs_progress_cb(self, cur, total):
-        self.cs_lbl_count.configure(text=f"已处理约 {cur} 页...")
+        enqueue(lambda: self.cs_lbl_count.configure(text=f"已处理约 {cur} 页..."))
 
     def _cs_stop(self):
         if self.cs_worker:
@@ -740,10 +873,12 @@ class ScraperTab:
 
     # ════════════════ TokenFinder 控制 ══════════════════════════════════
     def _tf_log(self, msg):
-        self.tf_log.configure(state="normal")
-        self.tf_log.insert("end", msg + "\n")
-        self.tf_log.see("end")
-        self.tf_log.configure(state="disabled")
+        def _do():
+            self.tf_log.configure(state="normal")
+            self.tf_log.insert("end", msg + "\n")
+            self.tf_log.see("end")
+            self.tf_log.configure(state="disabled")
+        enqueue(_do)
 
     def _tf_refresh_count(self):
         self.tf_lbl_count.configure(text=f"数据库已有 x_links：{db.count_x_links()} 条")
@@ -770,16 +905,18 @@ class ScraperTab:
 
     def _tf_run(self):
         self.tf_worker.run()
-        self.tf_btn_start.configure(state="normal")
-        self.tf_btn_stop.configure(state="disabled")
-        self._tf_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.tf_btn_start.configure(state="normal"))
+        enqueue(lambda: self.tf_btn_stop.configure(state="disabled"))
+        enqueue(self._tf_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _tf_progress_cb(self, cur, total):
-        if total:
-            self.tf_lbl_count.configure(text=f"进度 {cur}/{total}")
-        else:
-            self.tf_lbl_count.configure(text=f"已处理约 {cur} 条...")
+        def _do():
+            if total:
+                self.tf_lbl_count.configure(text=f"进度 {cur}/{total}")
+            else:
+                self.tf_lbl_count.configure(text=f"已处理约 {cur} 条...")
+        enqueue(_do)
 
     def _tf_stop(self):
         if self.tf_worker:
@@ -789,10 +926,12 @@ class ScraperTab:
 
     # ════════════════ 活动项目-Twitter 控制 ══════════════════════════════
     def _ct_log(self, msg):
-        self.ct_log.configure(state="normal")
-        self.ct_log.insert("end", msg + "\n")
-        self.ct_log.see("end")
-        self.ct_log.configure(state="disabled")
+        def _do():
+            self.ct_log.configure(state="normal")
+            self.ct_log.insert("end", msg + "\n")
+            self.ct_log.see("end")
+            self.ct_log.configure(state="disabled")
+        enqueue(_do)
 
     def _ct_refresh_count(self):
         self.ct_lbl_count.configure(text=f"数据库已有 campaign：{db.count_x_links()} 条")
@@ -822,13 +961,13 @@ class ScraperTab:
 
     def _ct_run(self):
         self.ct_worker.run()
-        self.ct_btn_start.configure(state="normal")
-        self.ct_btn_stop.configure(state="disabled")
-        self._ct_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.ct_btn_start.configure(state="normal"))
+        enqueue(lambda: self.ct_btn_stop.configure(state="disabled"))
+        enqueue(self._ct_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _ct_progress_cb(self, cur, total):
-        self.ct_lbl_count.configure(text=f"已处理约 {cur} 页...")
+        enqueue(lambda: self.ct_lbl_count.configure(text=f"已处理约 {cur} 页..."))
 
     def _ct_stop(self):
         if self.ct_worker:
@@ -838,10 +977,12 @@ class ScraperTab:
 
     # ════════════════ 活动项目-KOL 控制 ══════════════════════════════════
     def _ck_log(self, msg):
-        self.ck_log.configure(state="normal")
-        self.ck_log.insert("end", msg + "\n")
-        self.ck_log.see("end")
-        self.ck_log.configure(state="disabled")
+        def _do():
+            self.ck_log.configure(state="normal")
+            self.ck_log.insert("end", msg + "\n")
+            self.ck_log.see("end")
+            self.ck_log.configure(state="disabled")
+        enqueue(_do)
 
     def _ck_refresh_count(self):
         self.ck_lbl_count.configure(text=f"数据库已有 campaign：{db.count_x_links()} 条")
@@ -871,13 +1012,13 @@ class ScraperTab:
 
     def _ck_run(self):
         self.ck_worker.run()
-        self.ck_btn_start.configure(state="normal")
-        self.ck_btn_stop.configure(state="disabled")
-        self._ck_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.ck_btn_start.configure(state="normal"))
+        enqueue(lambda: self.ck_btn_stop.configure(state="disabled"))
+        enqueue(self._ck_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _ck_progress_cb(self, cur, total):
-        self.ck_lbl_count.configure(text=f"已处理约 {cur} 页...")
+        enqueue(lambda: self.ck_lbl_count.configure(text=f"已处理约 {cur} 页..."))
 
     def _ck_stop(self):
         if self.ck_worker:
@@ -887,16 +1028,20 @@ class ScraperTab:
 
     # ════════════════ 官网爬虫控制（保留在 ScraperTab 主类）═════════════
     def _sc_log(self, msg):
-        if hasattr(self, 'sc_log'):
-            self.sc_log.configure(state="normal")
-            self.sc_log.insert("end", msg + "\n")
-            self.sc_log.see("end")
-            self.sc_log.configure(state="disabled")
+        def _do():
+            if hasattr(self, 'sc_log'):
+                self.sc_log.configure(state="normal")
+                self.sc_log.insert("end", msg + "\n")
+                self.sc_log.see("end")
+                self.sc_log.configure(state="disabled")
+        enqueue(_do)
 
     def _sc_progress(self, cur, total):
-        if hasattr(self, 'sc_progress'):
-            self.sc_progress.set(cur / total if total else 0)
-            self.sc_lbl_progress.configure(text=f"{cur} / {total}")
+        def _do():
+            if hasattr(self, 'sc_progress'):
+                self.sc_progress.set(cur / total if total else 0)
+                self.sc_lbl_progress.configure(text=f"{cur} / {total}")
+        enqueue(_do)
 
     def _sc_refresh_count(self):
         if hasattr(self, 'sc_lbl_count'):
@@ -919,10 +1064,10 @@ class ScraperTab:
 
     def _sc_run(self):
         self.sc_worker.run()
-        self.sc_btn_start.configure(state="normal")
-        self.sc_btn_stop.configure(state="disabled")
-        self._sc_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.sc_btn_start.configure(state="normal"))
+        enqueue(lambda: self.sc_btn_stop.configure(state="disabled"))
+        enqueue(self._sc_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _sc_stop(self):
         if self.sc_worker:

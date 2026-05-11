@@ -16,16 +16,6 @@ else:
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
-# Google Service Account
-CREDENTIALS_FILE = os.path.join(DATA_DIR, "credentials.json")
-SPREADSHEET_ID   = "1Oqz3cTZyBtcK8foFpUIJjhFhPOICvrehgTDN7Qfr27k"
-
-# Google Sheet 表名
-SHEET_WEBSITE   = "website"
-SHEET_TGLINK    = "tglink"
-SHEET_XLINK     = "xlink"
-SHEET_TGCONTACT = "tgcontact"
-
 # Telegram API
 TG_API_ID   = 33174525
 TG_API_HASH = "014f07ac24479b27f4ede2645067effe"
@@ -49,7 +39,3 @@ CHAT_POS_FILE = os.path.join(DATA_DIR, "chat_box_position.txt")
 TWITTER_PW_DIR = os.path.join(DATA_DIR, "twitter_pw_session")
 TWITTER_BROWSER = "chrome"
 
-# ── API 服务器（局域网客户端模式）───────────────────────────────────────────
-# 留空 = 本机模式（直接操作 SQLite）；填 http://192.168.x.x:5000 = 客户端模式
-API_BASE = ""
-API_PORT = 5000

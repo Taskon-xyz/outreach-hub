@@ -245,7 +245,10 @@ def start_worker(worker_id: str, body: WorkerStartBody):
             lambda log, prog: TGLeftWorker(log, prog, mm, ms)))
 
     if worker_id == "tg_sender":
-        from workers.tg_sender_worker import TGSenderWorker
+        if sys.platform == 'darwin':
+            from workers.tg_sender_web_worker import TGSenderWebWorker as TGSenderWorker
+        else:
+            from workers.tg_sender_worker import TGSenderWorker
         return ok(_run_in_thread(worker_id,
             lambda log, prog: TGSenderWorker(
                 log, prog,
@@ -382,77 +385,6 @@ def save_tg_creds(purpose: str, body: TGCredBody):
     return ok()
 
 
-class PosBody(BaseModel):
-    x: int
-    y: int
-
-@app.get("/api/settings/tg-search-pos")
-def get_tg_search_pos():
-    x, y = db.get_tg_search_pos()
-    return ok({"x": x, "y": y})
-
-@app.post("/api/settings/tg-search-pos")
-def save_tg_search_pos(body: PosBody):
-    db.save_tg_search_pos(body.x, body.y)
-    return ok()
-
-
-class RegionBody(BaseModel):
-    top: int
-    left: int
-    width: int
-    height: int
-
-@app.get("/api/settings/ocr-region")
-def get_ocr_region():
-    return ok(db.get_ocr_region())
-
-@app.post("/api/settings/ocr-region")
-def save_ocr_region(body: RegionBody):
-    db.save_ocr_region(body.top, body.left, body.width, body.height)
-    return ok()
-
-@app.get("/api/settings/send-check-region")
-def get_send_check_region():
-    return ok(db.get_send_check_region())
-
-@app.post("/api/settings/send-check-region")
-def save_send_check_region(body: RegionBody):
-    db.save_send_check_region(body.top, body.left, body.width, body.height)
-    return ok()
-
-
-# ── X Position Files ──────────────────────────────────────────────
-@app.get("/api/settings/x-pos")
-def get_x_pos():
-    dm = chat = None
-    try:
-        with open(config.DM_POS_FILE) as f:
-            dm = f.read().strip()
-    except Exception:
-        pass
-    try:
-        with open(config.CHAT_POS_FILE) as f:
-            chat = f.read().strip()
-    except Exception:
-        pass
-    return ok({"dm": dm, "chat": chat})
-
-class XPosBody(BaseModel):
-    dm: Optional[str] = None
-    chat: Optional[str] = None
-
-@app.post("/api/settings/x-pos")
-def save_x_pos(body: XPosBody):
-    if body.dm is not None:
-        with open(config.DM_POS_FILE, "w") as f:
-            f.write(body.dm)
-    if body.chat is not None:
-        with open(config.CHAT_POS_FILE, "w") as f:
-            f.write(body.chat)
-    return ok()
-
-
 # ── Sources (distinct source tags) ────────────────────────────────
 @app.get("/api/sources/tg")
 def api_sources_tg():
@@ -473,45 +405,6 @@ def queue_preview():
         "tg_left":     len(db.get_unsent_tg_left_handles()),
         "x":           len(db.get_unsent_x_handles()),
     })
-
-
-# ── Calibration (pyautogui) ──────────────────────────────────────
-_calib_state = {"running": False, "result": None}
-
-@app.post("/api/calibrate/{target}")
-def start_calibration(target: str, delay: int = 5):
-    """启动坐标校准（需要 pyautogui），target: tg_search / x_dm / x_chat"""
-    if _calib_state["running"]:
-        return JSONResponse({"code": 1, "msg": "calibration already running"}, 400)
-
-    def _run():
-        _calib_state["running"] = True
-        _calib_state["result"] = None
-        import time
-        for i in range(delay, 0, -1):
-            sync_broadcast({"type": "calibrate", "target": target, "countdown": i})
-            time.sleep(1)
-        try:
-            import pyautogui
-            x, y = pyautogui.position()
-            _calib_state["result"] = {"x": x, "y": y}
-            sync_broadcast({"type": "calibrate", "target": target, "countdown": 0, "x": x, "y": y})
-            # 自动保存
-            if target == "tg_search":
-                db.save_tg_search_pos(x, y)
-            elif target == "x_dm":
-                with open(config.DM_POS_FILE, "w") as f:
-                    f.write(f"{x},{y}")
-            elif target == "x_chat":
-                with open(config.CHAT_POS_FILE, "w") as f:
-                    f.write(f"{x},{y}")
-        except Exception as e:
-            sync_broadcast({"type": "calibrate", "target": target, "error": str(e)})
-        finally:
-            _calib_state["running"] = False
-
-    threading.Thread(target=_run, daemon=True).start()
-    return ok({"started": True})
 
 
 # ── DeepSeek ──────────────────────────────────────────────────────

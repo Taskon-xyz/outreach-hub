@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from workers.parser_worker  import ParserWorker
 from workers.tgleft_worker  import TGLeftWorker
 import config
+from gui.thread_bridge import enqueue
 
 
 class ParserTab:
@@ -99,14 +100,16 @@ class ParserTab:
 
     # ── TG 管理员 ─────────────────────────────────────────────
     def _log_parser(self, msg):
-        self.parser_log.configure(state="normal")
-        self.parser_log.insert("end", msg + "\n")
-        self.parser_log.see("end")
-        self.parser_log.configure(state="disabled")
+        def _do():
+            self.parser_log.configure(state="normal")
+            self.parser_log.insert("end", msg + "\n")
+            self.parser_log.see("end")
+            self.parser_log.configure(state="disabled")
+        enqueue(_do)
 
     def _upd_parser(self, cur, total):
-        self.parser_prog.set(cur / total if total else 0)
-        self.lbl_parser_prog.configure(text=f"{cur}/{total}")
+        enqueue(lambda: self.parser_prog.set(cur / total if total else 0))
+        enqueue(lambda: self.lbl_parser_prog.configure(text=f"{cur}/{total}"))
 
     def _start_parser(self):
         self.btn_parser_start.configure(state="disabled")
@@ -116,8 +119,8 @@ class ParserTab:
 
     def _run_parser(self):
         self.parser_w.run()
-        self.btn_parser_start.configure(state="normal")
-        self.btn_parser_stop.configure(state="disabled")
+        enqueue(lambda: self.btn_parser_start.configure(state="normal"))
+        enqueue(lambda: self.btn_parser_stop.configure(state="disabled"))
 
     def _stop_parser(self):
         if self.parser_w:
@@ -126,10 +129,12 @@ class ParserTab:
 
     # ── 离群用户 ──────────────────────────────────────────────
     def _log_tgleft(self, msg):
-        self.tgleft_log.configure(state="normal")
-        self.tgleft_log.insert("end", msg + "\n")
-        self.tgleft_log.see("end")
-        self.tgleft_log.configure(state="disabled")
+        def _do():
+            self.tgleft_log.configure(state="normal")
+            self.tgleft_log.insert("end", msg + "\n")
+            self.tgleft_log.see("end")
+            self.tgleft_log.configure(state="disabled")
+        enqueue(_do)
 
     def _start_tgleft(self):
         try:
@@ -150,8 +155,8 @@ class ParserTab:
 
     def _run_tgleft(self):
         self.tgleft_w.run()
-        self.btn_tgleft_start.configure(state="normal")
-        self.btn_tgleft_stop.configure(state="disabled")
+        enqueue(lambda: self.btn_tgleft_start.configure(state="normal"))
+        enqueue(lambda: self.btn_tgleft_stop.configure(state="disabled"))
 
     def _stop_tgleft(self):
         if self.tgleft_w:

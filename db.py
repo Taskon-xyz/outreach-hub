@@ -8,39 +8,7 @@ from config import DATA_DIR
 
 DB_PATH = os.path.join(DATA_DIR, "outreach.db")
 
-# ── API 客户端模式（局域网其他电脑发送时启用）──────────────────────────────
-# config.API_BASE 留空 = 本机 SQLite 模式；填写 http://192.168.x.x:5000 = 客户端模式
 import config as _config
-
-def _api_url(path):
-    base = getattr(_config, "API_BASE", "")
-    return f"{base}/api/{path}" if base else ""
-
-
-def _api_get(path):
-    url = _api_url(path)
-    if not url:
-        return None
-    import requests
-    r = requests.get(url, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    if data.get("code") != 0:
-        raise Exception(data.get("msg", "api error"))
-    return data.get("data")
-
-
-def _api_post(path, payload):
-    url = _api_url(path)
-    if not url:
-        return None
-    import requests
-    r = requests.post(url, json=payload, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    if data.get("code") != 0:
-        raise Exception(data.get("msg", "api error"))
-    return data.get("data")
 
 
 def get_conn():
@@ -530,9 +498,6 @@ def get_unsent_x_handles(source=None):
     source: None=全部 | 'cb_excel' | 'cb_discover' | 'rootdata'
             | 'chainscope' | 'tokenfinder' | 'campaign'
     """
-    result = _api_get(f"queue/x?source={source}" if source else "queue/x")
-    if result is not None:
-        return result
     clause, params = _cooldown_clause("twitter", col="handle")
     conn = get_conn()
     try:
@@ -608,9 +573,6 @@ def count_tg_handles():
 
 def get_unsent_tg_admin_handles():
     """非 tg_left 的全部 tg_contacts，冷却期内已发和已跳过的除外"""
-    result = _api_get("queue/tg_admin")
-    if result is not None:
-        return result
     clause, params = _cooldown_clause("telegram", col="username")
     conn = get_conn()
     try:
@@ -627,9 +589,6 @@ def get_unsent_tg_admin_handles():
 
 def get_unsent_tg_imported_handles():
     """仓库导入的记录（source_link='google_sheet_import' 且非 tg_left）"""
-    result = _api_get("queue/tg_imported")
-    if result is not None:
-        return result
     clause, params = _cooldown_clause("telegram", col="username")
     conn = get_conn()
     try:
@@ -648,9 +607,6 @@ def get_unsent_tg_imported_handles():
 
 def get_unsent_tg_parsed_handles():
     """群解析出来的记录（source_link != 'google_sheet_import' 且非 tg_left）"""
-    result = _api_get("queue/tg_parsed")
-    if result is not None:
-        return result
     clause, params = _cooldown_clause("telegram", col="username")
     conn = get_conn()
     try:
@@ -708,9 +664,6 @@ def count_tg_left_users():
 
 def get_unsent_tg_left_handles():
     """source='tg_left'，冷却期内已发和已跳过的除外"""
-    result = _api_get("queue/tg_left")
-    if result is not None:
-        return result
     clause, params = _cooldown_clause("telegram", col="username")
     conn = get_conn()
     try:
@@ -780,9 +733,6 @@ def list_x_sources():
 # ─── Skip Handle ─────────────────────────────────────────────
 def skip_handle(username, reason="ocr_no_match"):
     """标记 tg_contacts 中的 handle 为跳过，不从队列删除"""
-    result = _api_post("skip", {"username": username, "reason": reason})
-    if result is not None:
-        return
     conn = get_conn()
     try:
         conn.execute(
@@ -809,9 +759,6 @@ def get_skipped_handles():
 
 def unskip_handle(username):
     """恢复被跳过的 handle，重新进入发送队列"""
-    result = _api_post("unskip", {"username": username})
-    if result is not None:
-        return
     conn = get_conn()
     try:
         conn.execute(
@@ -871,14 +818,6 @@ def delete_bot_handles():
 
 # ─── Send Log ─────────────────────────────────────────────────
 def log_send(handle, channel, source, message_name):
-    # 始终走 API（服务器和客户端都必须通过服务器记录发送）
-    result = _api_post("log_send", {
-        "handle": handle, "channel": channel,
-        "source": source, "message_name": message_name
-    })
-    if result is not None:  # API 模式
-        return
-    # 回退本机 SQLite
     conn = get_conn()
     try:
         conn.execute(
@@ -953,9 +892,6 @@ def set_active_template(channel, name):
 
 
 def get_active_template(channel):
-    result = _api_get(f"template/active/{channel}")
-    if result is not None:
-        return result
     conn = get_conn()
     try:
         row = conn.execute(
@@ -1033,9 +969,6 @@ def save_tg_credentials(purpose, api_id, api_hash):
 
 def get_tg_search_pos():
     """返回 TG 搜索栏坐标 (x, y)，默认 config 中的值"""
-    result = _api_get("setting/tg_search_pos")
-    if result is not None:
-        return result["x"], result["y"]
     x = int(get_setting("tg_search_bar_x", str(_config.TG_SEARCH_BAR_POS[0])))
     y = int(get_setting("tg_search_bar_y", str(_config.TG_SEARCH_BAR_POS[1])))
     return x, y
@@ -1048,9 +981,6 @@ def save_tg_search_pos(x, y):
 
 def get_send_check_region():
     """返回发送后错误检测的截图区域。未配置时动态取屏幕中间 1/2。"""
-    result = _api_get("setting/send_check_region")
-    if result is not None and result.get("top") is not None:
-        return result
     top    = get_setting("send_check_top",    None)
     left   = get_setting("send_check_left",   None)
     width  = get_setting("send_check_width",  None)
@@ -1075,9 +1005,6 @@ def save_send_check_region(top, left, width, height):
 
 def get_ocr_region():
     """返回 OCR 截图区域 dict，键：top/left/width/height"""
-    result = _api_get("setting/ocr_region")
-    if result is not None:
-        return result
     return {
         "top":    int(get_setting("ocr_region_top",    "80")),
         "left":   int(get_setting("ocr_region_left",   "0")),
@@ -1095,9 +1022,6 @@ def save_ocr_region(top, left, width, height):
 
 def get_cooldown_hours():
     """返回冷却总小时数（0 = 关闭冷却，历史发送过的永不再发）"""
-    result = _api_get("setting/cooldown")
-    if result is not None:
-        return result.get("total_hours", 0)
     try:
         days  = int(get_setting("cooldown_days",  "0"))
         hours = int(get_setting("cooldown_hours", "0"))
@@ -1132,9 +1056,6 @@ def _cooldown_clause(channel, col="handle"):
 
 # ─── Dashboard Stats ──────────────────────────────────────────
 def get_stats():
-    result = _api_get("stats")
-    if result is not None:
-        return result
     return {
         "projects":      count_projects(),
         "tg_links":      count_tg_links(),

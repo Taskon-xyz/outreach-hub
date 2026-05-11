@@ -22,9 +22,11 @@ class MessagesTab:
         pane.pack(fill="both", expand=True, padx=10)
         pane.columnconfigure(0, weight=1)
         pane.columnconfigure(1, weight=1)
+        pane.columnconfigure(2, weight=1)
 
         self._make_channel_panel(pane, "telegram", 0, "Telegram 文案")
         self._make_channel_panel(pane, "twitter",  1, "X (Twitter) 文案")
+        self._make_channel_panel(pane, "email",    2, "邮件文案（第一行=主题）")
 
     def _make_channel_panel(self, parent, channel, col, title):
         frame = ctk.CTkFrame(parent, fg_color=("gray85", "gray22"))

@@ -2,6 +2,7 @@
 主窗口 App — 构建标签页（懒加载：仅在首次切换时初始化 Tab 内容）
 """
 import customtkinter as ctk
+from gui.thread_bridge import drain
 
 
 class App(ctk.CTk):
@@ -14,6 +15,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self._build_ui()
+        drain(self)  # 启动 UI 线程桥轮询（每 50ms 排干后台任务队列）
 
     def _build_ui(self):
         # Tabview 自然填满窗口，移除固定尺寸锁

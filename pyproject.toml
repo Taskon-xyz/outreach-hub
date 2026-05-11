@@ -7,12 +7,6 @@ dependencies = [
     # GUI
     "customtkinter>=5.2.0,<6",
 
-    # Google Sheets
-    "gspread>=6.0.0,<7",
-    "oauth2client>=4.1.3,<5",
-    "google-api-python-client>=2.70.0,<3",
-    "google-auth-oauthlib>=0.7.0,<2",
-
     # 浏览器自动化
     "playwright>=1.40.0,<2",
     "undetected-chromedriver>=3.5.0,<4",
@@ -29,12 +23,8 @@ dependencies = [
     "pyperclip>=1.8.0,<2",
 
     # OCR
-    "easyocr>=1.7.0,<2",
     "mss>=10.0.0,<11",
     "pillow>=10.0.0,<11",
-
-    # 键盘
-    "keyboard>=0.13.5,<1",
 
     # HTTP / API
     "requests>=2.31.0,<3",

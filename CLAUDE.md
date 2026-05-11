@@ -92,7 +92,7 @@ CustomTkinter 桌面应用，`gui/app.py` 懒加载 7 个标签页：
 | `parser_worker` | TG 群链接 | tg_handles | Telethon |
 | `tgleft_worker` | TG 小群 | tg_left_users | Telethon |
 | `tg_sender_worker` | TG handles | send_log | WinRT OCR + PyAutoGUI |
-| `x_sender_worker` | X handles | send_log | PyAutoGUI 坐标点击 |
+| `x_sender_worker` | X handles | send_log | Playwright 浏览器自动化 |
 | `rootdata_worker` | RootData API | projects+tg_links+x_links | Playwright |
 | `chainscope_worker` | ChainScope API | projects+x_links | 纯 HTTP |
 | `token_finder_worker` | TokenFinder API | x_links | 纯 HTTP |

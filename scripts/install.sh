@@ -2,7 +2,7 @@
 # Outreach Hub 一键安装脚本
 #
 # 使用方式（新同事直接复制到终端运行）：
-#   bash <(curl -fsSL https://raw.githubusercontent.com/Taskon-xyz/outreach-hub/main/scripts/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/lukezhao-tech/outreach-hub/main/scripts/install.sh)
 #
 # 或先 clone 后运行：
 #   git clone https://github.com/Taskon-xyz/outreach-hub.git
@@ -10,7 +10,7 @@
 #   bash scripts/install.sh
 set -e
 
-REPO_URL="https://github.com/Taskon-xyz/outreach-hub.git"
+REPO_URL="https://github.com/lukezhao-tech/outreach-hub.git"
 REPO_NAME="outreach-hub"
 
 echo "Outreach Hub 安装"
