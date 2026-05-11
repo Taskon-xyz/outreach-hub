@@ -26,6 +26,7 @@ else
     if [ -d "$REPO_NAME" ]; then
         echo "[OK] 目录 $REPO_NAME 已存在，拉取最新..."
         cd "$REPO_NAME"
+        git remote set-url origin "$REPO_URL"
         git pull || true
     else
         echo "克隆仓库..."
