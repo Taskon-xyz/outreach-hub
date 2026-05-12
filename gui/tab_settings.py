@@ -22,6 +22,7 @@ class SettingsTab:
 
     # ════════════════ 整体布局（Canvas 滚动，性能优于 CTkScrollableFrame） ══
     def _build(self):
+        import platform
         # Canvas + Scrollbar（而不是 CTkScrollableFrame）
         container = ctk.CTkFrame(self.parent, fg_color="transparent")
         container.pack(fill="both", expand=True)
@@ -46,20 +47,35 @@ class SettingsTab:
         )
 
         # Canvas 滚动区域随内容更新
-        def _on_frame_configure(_):
+        def _on_frame_configure(_=None):
             self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
         def _on_canvas_configure(e):
             # Canvas 宽度固定为容器宽度，内容永远不换行
             self._canvas.itemconfig(self._canvas_window, width=e.width)
+            _on_frame_configure()
 
-        self.body.bind("<<WidgetChanged>>", _on_frame_configure)
+        # <<WidgetChanged>> 在 CTk 中不触发，改用 <Configure>
+        self.body.bind("<Configure>", _on_frame_configure)
         self._canvas.bind("<Configure>", _on_canvas_configure)
 
-        # 鼠标滚轮支持
+        # 鼠标滚轮支持（仅鼠标在设置面板内时生效）
+        _is_macos = platform.system() == "Darwin"
+
         def _on_mousewheel(event):
-            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        self._canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            if _is_macos:
+                self._canvas.yview_scroll(-event.delta, "units")
+            else:
+                self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _bind_mousewheel(_):
+            self._canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _unbind_mousewheel(_):
+            self._canvas.unbind_all("<MouseWheel>")
+
+        self._canvas.bind("<Enter>", _bind_mousewheel)
+        self._canvas.bind("<Leave>", _unbind_mousewheel)
 
         ctk.CTkLabel(self.body, text="设置",
                      font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(16, 10))
