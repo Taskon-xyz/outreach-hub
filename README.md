@@ -25,7 +25,7 @@ X DM 发送需要通过 Chrome 浏览器完成，请先安装：
 复制以下命令到终端运行：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Taskon-xyz/outreach-hub/main/scripts/install.sh)
+bash -c "$(curl -sSL https://raw.githubusercontent.com/Taskon-xyz/outreach-hub/main/scripts/install.sh)"
 ```
 
 这个脚本会自动完成以下所有步骤：
