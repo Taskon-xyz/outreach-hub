@@ -12,7 +12,7 @@ from workers.base_worker import BaseWorker
 
 # 列名映射：标准列名 → 可接受的别名列表（小写）
 COLUMN_ALIASES = {
-    "company_name": ["company_name", "项目名", "name", "project_name", "公司名", "项目名称"],
+    "company_name": ["company_name", "project_name", "项目名", "name", "公司名", "项目名称"],
     "website":      ["website", "官网", "url", "site", "网站"],
     "x_handle":     ["x_handle", "x", "twitter", "x账号", "x账号链接", "twitter_handle"],
     "tg_handle":    ["tg_handle", "telegram", "tg", "tg账号", "telegram_handle"],
@@ -96,9 +96,10 @@ class ManualImportWorker(BaseWorker):
             self.safe_log(f"错误 {stats['errors']} 行")
 
     def _match_columns(self, columns):
-        """将 DataFrame 列名映射到标准字段名"""
+        """将 DataFrame 列名映射到标准字段名（空格/下划线/大小写不敏感）"""
         col_map = {}
-        normalized = {c.strip().lower(): c for c in columns}
+        # key: 列名归一化（去空格→下划线、小写），value: 原始列名
+        normalized = {c.strip().lower().replace(" ", "_"): c for c in columns}
 
         for std_name, aliases in COLUMN_ALIASES.items():
             for alias in aliases:
