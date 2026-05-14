@@ -1,5 +1,7 @@
 # Web3 Outreach Hub
 
+> [English version](README.en.md)
+
 Web3 项目自动化触达工具。从多种数据源导入项目信息，自动爬取官网提取 Telegram / X 链接，解析群管理员，然后通过 TG / X DM 批量发送消息。
 
 ## 功能
