@@ -1108,10 +1108,12 @@ class ScraperTab:
             self.import_file_entry.insert(0, path)
 
     def _import_log_fn(self, msg):
-        self.import_log.configure(state="normal")
-        self.import_log.insert("end", msg + "\n")
-        self.import_log.see("end")
-        self.import_log.configure(state="disabled")
+        def _do():
+            self.import_log.configure(state="normal")
+            self.import_log.insert("end", msg + "\n")
+            self.import_log.see("end")
+            self.import_log.configure(state="disabled")
+        enqueue(_do)
 
     def _import_refresh_count(self):
         self.import_lbl_count.configure(
@@ -1150,17 +1152,17 @@ class ScraperTab:
 
     def _import_run(self):
         self.import_worker.run()
-        self.import_btn_start.configure(state="normal")
-        self.import_btn_stop.configure(state="disabled")
-        self._import_refresh_count()
-        self._refresh_all_tag_selectors()
+        enqueue(lambda: self.import_btn_start.configure(state="normal"))
+        enqueue(lambda: self.import_btn_stop.configure(state="disabled"))
+        enqueue(self._import_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
 
     def _import_progress_cb(self, cur, total):
         if total:
-            self.import_progress.set(cur / total)
-            self.import_lbl_progress.configure(text=f"{cur} / {total}")
+            enqueue(lambda: self.import_progress.set(cur / total))
+            enqueue(lambda: self.import_lbl_progress.configure(text=f"{cur} / {total}"))
         else:
-            self.import_lbl_progress.configure(text=f"已处理 {cur} 行...")
+            enqueue(lambda: self.import_lbl_progress.configure(text=f"已处理 {cur} 行..."))
 
     def _import_stop(self):
         if self.import_worker:
