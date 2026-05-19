@@ -18,6 +18,10 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
 from workers.base_worker import BaseWorker
+from workers.browser_stealth import (
+    STEALTH_ARGS, IGNORE_DEFAULT_ARGS, STEALTH_INIT_SCRIPT,
+    CONTEXT_KWARGS, EXTRA_HTTP_HEADERS,
+)
 
 X_PATTERN = re.compile(r'https?://(?:twitter\.com|x\.com)/([A-Za-z0-9_]{1,15})')
 # 排除的 X 账号（CryptoRank 自身 + 通用无效）
@@ -72,15 +76,14 @@ class CryptoRankWorker(BaseWorker):
             return
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-            context = await browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/122.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1440, "height": 900},
+            browser = await p.chromium.launch(
+                headless=False,
+                args=STEALTH_ARGS,
+                ignore_default_args=IGNORE_DEFAULT_ARGS,
             )
+            context = await browser.new_context(**CONTEXT_KWARGS)
+            await context.add_init_script(STEALTH_INIT_SCRIPT)
+            await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
             page = await context.new_page()
 
             self.log(f"打开：{self.start_url}")

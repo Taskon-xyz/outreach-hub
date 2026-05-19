@@ -13,6 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
 import config
 from workers.base_worker import BaseWorker
+from workers.browser_stealth import (
+    STEALTH_ARGS, IGNORE_DEFAULT_ARGS, STEALTH_INIT_SCRIPT,
+    CONTEXT_KWARGS, EXTRA_HTTP_HEADERS,
+)
 
 # ── 选择器（基于 Twitter DM 页面实际结构）───────────────────────────────────
 DM_URL = "https://x.com/i/chat"
@@ -30,15 +34,29 @@ SEL_DM_TEXTAREA = "xpath=//*[@id='dm-main-container']//form//textarea"
 SEL_SEND_BTN = "xpath=//*[@id='dm-main-container']//form//button"
 
 
+def _has_saved_session(pw_dir: str) -> bool:
+    """检查 persistent context 目录里是否有已保存的 Chrome 登录态（Cookies 文件）。"""
+    cookies_path = os.path.join(pw_dir, "Default", "Cookies")
+    return os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 4096
+
+
 class XSenderPWWorker(BaseWorker):
-    """Playwright 版 Twitter DM 发送 Worker（macOS）"""
+    """Playwright 版 Twitter DM 发送 Worker（macOS）
+
+    mode:
+      'x_links'    — 发送给项目官号（x_links 表，默认）
+      'x_contacts' — 发送给关键人（x_contacts 表，按 role 过滤）
+    """
 
     def __init__(self, log_callback, progress_callback=None,
-                 message_name="", message_content="", source=None):
+                 message_name="", message_content="", source=None,
+                 mode="x_links", role=None):
         super().__init__(log_callback, progress_callback)
         self.message_name    = message_name
         self.message_content = message_content
-        self.source          = source  # None=全部，其他=分类过滤
+        self.source          = source  # x_links 模式下的 source 过滤
+        self.mode            = mode    # 'x_links' | 'x_contacts'
+        self.role            = role    # x_contacts 模式下的 role 过滤
 
     def set_ready(self):
         """由 GUI / Web API 调用，通知 worker 可以开始发送"""
@@ -76,46 +94,73 @@ class XSenderPWWorker(BaseWorker):
     async def _launch_browser(self, p, browser_type):
         """
         启动浏览器，返回 (page, context, need_close)。
-        两种模式：Chrome CDP > Chrome persistent
-        """
-        # ── 模式 1：Chrome CDP（连接已打开的 Chrome，零检测风险）───────────
-        if browser_type == "chrome":
-            try:
-                self.log("[浏览器] 尝试连接已打开的 Chrome（端口 9222）...")
-                browser = await p.chromium.connect_over_cdp("http://localhost:9222")
-                context = browser.contexts[0] if browser.contexts else await browser.new_context()
-                page = context.pages[0] if context.pages else await context.new_page()
-                self.log("[浏览器] 已连接到 Chrome（CDP 模式）")
-                return page, context, False
-            except Exception as e:
-                self.log(f"[浏览器] CDP 连接失败（{str(e)[:60]}）")
 
-            # ── 模式 2：Chrome persistent context（反检测）─────────────────
+        优先级：
+          1. CDP（已运行 start_chrome_cdp.sh 的真实 Chrome，零检测风险）
+          2. Persistent context（仅在已有保存的登录态时才用，不要求用户在 Playwright Chrome 内登录）
+             → 如果没有保存的 session，直接报错，引导用户用 CDP 流程
+        """
+        # ── 模式 1：CDP ──────────────────────────────────────────────────────
+        try:
+            self.log("[浏览器] 尝试连接 Chrome CDP（端口 9222）...")
+            browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+            # 注入 stealth：对后续所有新页面生效
             try:
-                self.log("[浏览器] 启动 Chrome（persistent context + 反检测）...")
-                os.makedirs(config.TWITTER_PW_DIR, exist_ok=True)
-                context = await p.chromium.launch_persistent_context(
-                    config.TWITTER_PW_DIR,
-                    headless=False,
-                    channel="chrome",
-                    viewport={"width": 1440, "height": 900},
-                    user_agent=(
-                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/136.0.0.0 Safari/537.36"
-                    ),
-                    args=["--disable-blink-features=AutomationControlled"],
-                    ignore_default_args=["--enable-automation"],
-                )
-                page = context.pages[0] if context.pages else await context.new_page()
-                await page.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
-                )
-                return page, context, True
-            except Exception as e:
-                self.log(f"[浏览器] Chrome 启动失败（{str(e)[:60]}）")
-                self.log("请确保已安装浏览器：playwright install chromium")
-                return None, None, False
+                await context.add_init_script(STEALTH_INIT_SCRIPT)
+            except Exception:
+                pass
+            try:
+                await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
+            except Exception:
+                pass
+            page = context.pages[0] if context.pages else await context.new_page()
+            # 立即在当前页执行 stealth（覆盖已加载的页面）
+            try:
+                await page.evaluate(STEALTH_INIT_SCRIPT)
+            except Exception:
+                pass
+            await page.bring_to_front()
+            self.log("[浏览器] 已连接（CDP 模式）✓")
+            return page, context, False
+        except Exception as e:
+            self.log(f"[浏览器] CDP 未就绪（{str(e)[:50]}）")
+
+        # ── 模式 2：Persistent context（仅有保存 session 时使用）────────────
+        session_ok = _has_saved_session(config.TWITTER_PW_DIR)
+        if not session_ok:
+            self.log("─" * 50)
+            self.log("❌  未找到保存的 X 登录态，且 CDP Chrome 未运行。")
+            self.log("")
+            self.log("请按以下步骤操作：")
+            self.log("  1. 在终端运行：./scripts/start_chrome_cdp.sh")
+            self.log("  2. 在弹出的 Chrome 窗口中手动登录 X")
+            self.log("  3. 回到本程序，重新点「▶ 开始发送」")
+            self.log("")
+            self.log("登录成功后，下次无需再次登录（会话已持久化）。")
+            self.log("─" * 50)
+            return None, None, False
+
+        try:
+            self.log("[浏览器] 使用已保存的 session 启动 persistent context...")
+            os.makedirs(config.TWITTER_PW_DIR, exist_ok=True)
+            context = await p.chromium.launch_persistent_context(
+                config.TWITTER_PW_DIR,
+                headless=False,
+                channel="chrome",
+                args=STEALTH_ARGS,
+                ignore_default_args=IGNORE_DEFAULT_ARGS,
+                **CONTEXT_KWARGS,
+            )
+            await context.add_init_script(STEALTH_INIT_SCRIPT)
+            await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
+            page = context.pages[0] if context.pages else await context.new_page()
+            self.log("[浏览器] Persistent context 已启动 ✓")
+            return page, context, True
+        except Exception as e:
+            self.log(f"[浏览器] 启动失败（{str(e)[:60]}）")
+            self.log("请确保已安装 Google Chrome，或使用 CDP 模式（start_chrome_cdp.sh）")
+            return None, None, False
 
     async def _send_loop(self, page):
         """主发送循环"""
@@ -138,21 +183,33 @@ class XSenderPWWorker(BaseWorker):
             await asyncio.sleep(0.5)
 
         # 获取待发列表
-        handles = db.get_unsent_x_handles(source=self.source)
-        if not handles:
-            src_label = {"cb_excel": "仓库导入", "cb_discover": "融资项目（CB Discover）",
-                         "rootdata": "融资项目（RootData）", "chainscope": "链上变化",
-                         "tokenfinder": "低交易量", "campaign": "活动举办",
-                         "cryptorank": "融资项目（CryptoRank）"}.get(self.source, "全部")
-            self.log(f"没有待发送的 X 用户（{src_label}）")
-            return
-
-        self.log(f"待发 {len(handles)} 个 X 用户")
+        if self.mode == "x_contacts":
+            handles = db.get_unsent_x_contacts(role=self.role)
+            role_label = self.role or "全部角色"
+            if not handles:
+                self.log(f"没有待发送的 X 关键人（{role_label}）")
+                return
+            self.log(f"待发 {len(handles)} 个关键人（{role_label}）")
+        else:
+            handles = db.get_unsent_x_handles(source=self.source)
+            if not handles:
+                src_label = {"cb_excel": "仓库导入", "cb_discover": "融资项目（CB Discover）",
+                             "rootdata": "融资项目（RootData）", "chainscope": "链上变化",
+                             "tokenfinder": "低交易量", "campaign": "活动举办",
+                             "cryptorank": "融资项目（CryptoRank）"}.get(self.source, "全部")
+                self.log(f"没有待发送的 X 用户（{src_label}）")
+                return
+            self.log(f"待发 {len(handles)} 个 X 用户")
 
         sent_count = 0
         skip_count = 0
 
         for idx, raw_handle in enumerate(handles):
+            if self._stop:
+                self.log("已停止")
+                break
+
+            await self._wait_if_paused()
             if self._stop:
                 self.log("已停止")
                 break
@@ -167,7 +224,12 @@ class XSenderPWWorker(BaseWorker):
                 success = False
 
             if success:
-                db.log_send(raw_handle, "twitter", self.source or "x_link", self.message_name)
+                src_tag = (
+                    f"x_contacts:{self.role or 'all'}"
+                    if self.mode == "x_contacts"
+                    else (self.source or "x_link")
+                )
+                db.log_send(raw_handle, "twitter", src_tag, self.message_name)
                 sent_count += 1
                 self.log(f"  已发送")
             else:
@@ -181,6 +243,7 @@ class XSenderPWWorker(BaseWorker):
                 wait = random.uniform(5, 15)
                 self.log(f"  等待 {wait:.1f}s...")
                 await asyncio.sleep(wait)
+                await self._wait_if_paused()
 
         self.log(f"\nX 发送完成！成功 {sent_count}，跳过 {skip_count}")
 

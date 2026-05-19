@@ -9,14 +9,19 @@ import asyncio
 import re
 import time
 import random
+import traceback
 
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
 from workers.base_worker import BaseWorker
+from workers.browser_stealth import (
+    STEALTH_ARGS, IGNORE_DEFAULT_ARGS, STEALTH_INIT_SCRIPT,
+    CONTEXT_KWARGS, EXTRA_HTTP_HEADERS,
+)
 
 ROOTDATA_BASE   = "https://www.rootdata.com"
-FUNDRAISING_URL = "https://www.rootdata.com/Fundraising"
+FUNDRAISING_URL = "https://www.rootdata.com/fundraising"
 
 # 排除 RootData 自己的账号
 EXCLUDE_X  = {"rootdatacrypto"}
@@ -47,9 +52,15 @@ class RootDataWorker(BaseWorker):
 
     def run(self):
         try:
-            asyncio.run(self._async_run())
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self._async_run())
+            finally:
+                loop.close()
         except Exception as e:
             self.log(f"[错误] {e}")
+            self.log(traceback.format_exc())
 
     async def _async_run(self):
         try:
@@ -58,85 +69,123 @@ class RootDataWorker(BaseWorker):
             self.log("请安装 playwright：pip install playwright && playwright install chromium")
             return
 
+        try:
+            from bs4 import BeautifulSoup  # noqa: F401
+        except ImportError:
+            self.log("请安装 beautifulsoup4：uv add beautifulsoup4 或 pip install beautifulsoup4")
+            return
+
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)   # 有头模式方便登录
-            context = await browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/122.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1440, "height": 900},
+            browser = await p.chromium.launch(
+                headless=False,
+                args=STEALTH_ARGS,
+                ignore_default_args=IGNORE_DEFAULT_ARGS,
             )
+            context = await browser.new_context(**CONTEXT_KWARGS)
+            await context.add_init_script(STEALTH_INIT_SCRIPT)
+            await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
             page = await context.new_page()
 
-            self.log(f"打开：{self.start_url}")
-            await page.goto(self.start_url, timeout=60000, wait_until="domcontentloaded")
-            await asyncio.sleep(3)
+            try:
+                self.log(f"打开：{self.start_url}")
+                await page.goto(self.start_url, timeout=60000, wait_until="domcontentloaded")
+                await asyncio.sleep(3)
 
-            self.log("浏览器已打开，如需登录请先完成，然后点击「已就绪，开始抓取」按钮。")
+                self.log("浏览器已打开，如需登录请先完成，然后点击「已就绪，开始抓取」按钮。")
 
-            # 等待 UI 通知就绪（由 login_event 控制，通过 _ready 标志）
-            while not getattr(self, '_ready', False):
-                if self._stop:
-                    await browser.close()
-                    return
-                await asyncio.sleep(0.5)
+                # 等待 UI 通知就绪
+                while not getattr(self, '_ready', False):
+                    if self._stop:
+                        return
+                    await asyncio.sleep(0.5)
 
-            self.log("开始抓取...")
-
-            # 跳转到起始页
-            if self.start_page > 1:
-                self.log(f"跳转到第 {self.start_page} 页...")
-                jumped = await self._jump_to_page(page, self.start_page)
-                if not jumped:
-                    self.log(f"⚠ 无法跳转到第 {self.start_page} 页，从当前页开始")
-
-            total_inserted = 0
-            total_skipped  = 0
-            page_num = self.start_page - 1
-
-            while not self._stop and page_num < (self.start_page - 1 + self.max_pages):
-                page_num += 1
-                self.log(f"\n── 第 {page_num} 页 ──")
-
-                # 等待项目列表加载
+                self.log("开始抓取...")
+                self.log(f"当前页面 URL：{page.url}")
                 try:
-                    await page.wait_for_selector('a[href*="/Projects/detail/"]', timeout=15000)
+                    title = await page.title()
+                    self.log(f"当前页面标题：{title}")
                 except Exception:
-                    self.log("  列表未加载，停止")
-                    break
+                    pass
 
-                # 提取本页所有项目链接
-                project_links = await self._get_project_links(page)
-                if not project_links:
-                    self.log("  本页无项目，停止")
-                    break
+                # 诊断：检查页面上有多少个 /Projects/detail/ 链接
+                try:
+                    detail_count = await page.locator('a[href*="/projects/detail/" i]').count()
+                    self.log(f"诊断：页面上 /Projects/detail/ 链接数量 = {detail_count}")
+                except Exception as e:
+                    self.log(f"诊断：链接检查失败 {e}")
 
-                self.log(f"  本页 {len(project_links)} 个项目")
+                # 跳转到起始页
+                if self.start_page > 1:
+                    self.log(f"跳转到第 {self.start_page} 页...")
+                    jumped = await self._jump_to_page(page, self.start_page)
+                    if not jumped:
+                        self.log(f"⚠ 无法跳转到第 {self.start_page} 页，从当前页开始")
 
-                for name, proj_url in project_links:
+                total_inserted = 0
+                total_skipped  = 0
+                page_num = self.start_page - 1
+
+                while not self._stop and page_num < (self.start_page - 1 + self.max_pages):
+                    page_num += 1
+                    self.log(f"\n── 第 {page_num} 页 ──")
+
+                    # 等待项目列表加载
+                    try:
+                        await page.wait_for_selector('a[href*="/projects/detail/" i]', timeout=15000)
+                    except Exception:
+                        self.log(f"  ⚠ 列表未加载（URL={page.url}）")
+                        # 输出 body 前 300 字符，帮助诊断
+                        try:
+                            body_text = (await page.inner_text("body"))[:300]
+                            self.log(f"  页面内容片段：{body_text}")
+                        except Exception:
+                            pass
+                        self.log("  浏览器保持打开，请检查页面状态。点击「⏹ 停止」关闭浏览器。")
+                        # 等待用户停止
+                        while not self._stop:
+                            await asyncio.sleep(1)
+                        break
+
+                    # 提取本页所有项目链接
+                    project_links = await self._get_project_links(page)
+                    if not project_links:
+                        self.log("  本页无项目，停止")
+                        break
+
+                    self.log(f"  本页 {len(project_links)} 个项目")
+
+                    for name, proj_url in project_links:
+                        if self._stop:
+                            break
+                        ins, skp = await self._process_project(context, name, proj_url)
+                        total_inserted += ins
+                        total_skipped  += skp
+                        self.progress(total_inserted + total_skipped, None)
+                        await asyncio.sleep(random.uniform(2, 4))
+
                     if self._stop:
                         break
-                    ins, skp = await self._process_project(context, name, proj_url)
-                    total_inserted += ins
-                    total_skipped  += skp
-                    self.progress(total_inserted + total_skipped, None)
-                    await asyncio.sleep(random.uniform(2, 4))
 
-                if self._stop:
-                    break
+                    # 翻页
+                    has_next = await self._click_next(page)
+                    if not has_next:
+                        self.log("已到最后一页")
+                        break
+                    await asyncio.sleep(random.uniform(2, 3))
 
-                # 翻页
-                has_next = await self._click_next(page)
-                if not has_next:
-                    self.log("已到最后一页")
-                    break
-                await asyncio.sleep(random.uniform(2, 3))
-
-            self.log(f"\n完成！新增 {total_inserted} 条，跳过 {total_skipped} 条")
-            self.log(f"数据库 projects 表总数：{db.count_projects()}")
-            await browser.close()
+                self.log(f"\n完成！新增 {total_inserted} 条，跳过 {total_skipped} 条")
+                self.log(f"数据库 projects 表总数：{db.count_projects()}")
+            except Exception as e:
+                self.log(f"[运行异常] {e}")
+                self.log(traceback.format_exc())
+                self.log("浏览器保持打开，请检查页面。点击「⏹ 停止」关闭。")
+                while not self._stop:
+                    await asyncio.sleep(1)
+            finally:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
 
     def set_ready(self):
         """由 UI 调用，通知 worker 可以开始抓取"""
@@ -145,7 +194,7 @@ class RootDataWorker(BaseWorker):
     async def _get_project_links(self, page):
         """提取当前页所有唯一项目链接"""
         links = await page.eval_on_selector_all(
-            'a[href*="/Projects/detail/"]',
+            'a[href*="/projects/detail/" i]',
             """els => els.map(el => ({
                 href: el.href,
                 text: el.innerText.trim()
@@ -266,7 +315,7 @@ class RootDataWorker(BaseWorker):
             await input_el.press('Enter')
             await asyncio.sleep(3)
             # 等待列表刷新
-            await page.wait_for_selector('a[href*="/Projects/detail/"]', timeout=15000)
+            await page.wait_for_selector('a[href*="/projects/detail/" i]', timeout=15000)
             self.log(f"  已跳转到第 {target_page} 页")
             return True
         except Exception as e:
@@ -275,13 +324,76 @@ class RootDataWorker(BaseWorker):
 
     async def _click_next(self, page):
         """点击 Next 按钮，返回 True 表示成功翻页"""
+        # 记录跳转前第一个项目链接，用于判断翻页是否真的发生
         try:
-            next_btn = page.locator('button.btn-next:not([disabled])')
-            if await next_btn.count() == 0:
-                return False
-            await next_btn.click()
-            await asyncio.sleep(1)
-            await page.wait_for_selector('a[href*="/Projects/detail/"]', timeout=10000)
-            return True
+            first_href_before = await page.locator('a[href*="/projects/detail/" i]').first.get_attribute("href")
+        except Exception:
+            first_href_before = None
+
+        # 候选的「下一页」按钮选择器（兼容多种 UI 库）
+        candidates = [
+            'button.btn-next:not([disabled])',                          # Element UI 旧版
+            'button.el-pager__btn-next:not([disabled])',
+            'button[aria-label="Next"]:not([disabled])',                # 通用 ARIA
+            'button[aria-label="next page"]:not([disabled])',
+            'button[aria-label*="next" i]:not([disabled])',
+            'a[aria-label*="next" i]:not([aria-disabled="true"])',
+            'li.ant-pagination-next:not(.ant-pagination-disabled) a',   # Ant Design
+            'li.ant-pagination-next:not(.ant-pagination-disabled) button',
+            '.pagination-next:not(.disabled)',
+            'button:has-text("Next"):not([disabled])',                  # 文本匹配
+            'a:has-text("Next")',
+            'button:has(svg) >> nth=-1',                                # 兜底：最后一个图标按钮
+        ]
+
+        clicked = False
+        for sel in candidates:
+            try:
+                btn = page.locator(sel).first
+                if await btn.count() == 0:
+                    continue
+                if not await btn.is_visible():
+                    continue
+                await btn.scroll_into_view_if_needed(timeout=2000)
+                await btn.click(timeout=3000)
+                clicked = True
+                self.log(f"  使用翻页选择器：{sel}")
+                break
+            except Exception:
+                continue
+
+        if not clicked:
+            # 诊断：dump 翻页区域 HTML，帮助下一步定位
+            try:
+                pagination_html = await page.evaluate("""
+                    () => {
+                        const candidates = document.querySelectorAll('[class*="pag" i], [class*="page" i], nav, ul');
+                        const out = [];
+                        for (const el of candidates) {
+                            const t = el.innerText || '';
+                            if (/next|prev|\\d/i.test(t) && t.length < 200) {
+                                out.push(el.outerHTML.slice(0, 500));
+                            }
+                        }
+                        return out.slice(0, 3).join('\\n---\\n');
+                    }
+                """)
+                self.log(f"  翻页区域 HTML 片段：\n{pagination_html[:1500]}")
+            except Exception:
+                pass
+            return False
+
+        # 等待新页面项目链接加载（且与上一页不同）
+        try:
+            for _ in range(20):
+                await asyncio.sleep(0.5)
+                try:
+                    first_href_after = await page.locator('a[href*="/projects/detail/" i]').first.get_attribute("href")
+                except Exception:
+                    first_href_after = None
+                if first_href_after and first_href_after != first_href_before:
+                    return True
+            self.log("  翻页后内容未变化")
+            return False
         except Exception:
             return False

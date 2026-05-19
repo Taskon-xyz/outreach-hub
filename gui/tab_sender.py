@@ -114,16 +114,37 @@ class SenderTab:
         ctk.CTkLabel(frame, text="X (Twitter) 发送",
                      font=ctk.CTkFont(weight="bold")).pack(pady=(10, 4))
 
-        # 数据源选择（动态读 DB distinct source）
-        src_row = ctk.CTkFrame(frame, fg_color="transparent")
-        src_row.pack(fill="x", padx=14, pady=2)
-        ctk.CTkLabel(src_row, text="数据源：", width=60).pack(side="left")
-        self.x_source = ctk.CTkOptionMenu(src_row, values=["all"])
+        # 发送目标模式：项目官号 or 关键人
+        mode_row = ctk.CTkFrame(frame, fg_color="transparent")
+        mode_row.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(mode_row, text="发送目标：", width=72).pack(side="left")
+        self.x_mode = ctk.CTkOptionMenu(
+            mode_row,
+            values=["项目官号 (x_links)", "关键人 (x_contacts)"],
+            command=self._on_x_mode_change,
+            width=180,
+        )
+        self.x_mode.pack(side="left", padx=4)
+
+        # 数据源选择（x_links 模式）
+        self.x_src_row = ctk.CTkFrame(frame, fg_color="transparent")
+        self.x_src_row.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(self.x_src_row, text="数据源：", width=72).pack(side="left")
+        self.x_source = ctk.CTkOptionMenu(self.x_src_row, values=["all"])
         self.x_source.pack(side="left", padx=4)
-        ctk.CTkButton(src_row, text="🔄", width=28, height=24,
+        ctk.CTkButton(self.x_src_row, text="🔄", width=28, height=24,
                       fg_color="gray40", hover_color="gray30",
                       command=self._refresh_x_sources).pack(side="left", padx=2)
         self._refresh_x_sources()
+
+        # 角色筛选（x_contacts 模式，默认隐藏）
+        self.x_role_row = ctk.CTkFrame(frame, fg_color="transparent")
+        ctk.CTkLabel(self.x_role_row, text="角色：", width=72).pack(side="left")
+        self.x_role = ctk.CTkOptionMenu(self.x_role_row, values=["all"])
+        self.x_role.pack(side="left", padx=4)
+        ctk.CTkButton(self.x_role_row, text="🔄", width=28, height=24,
+                      fg_color="gray40", hover_color="gray30",
+                      command=self._refresh_x_roles).pack(side="left", padx=2)
 
         # 坐标状态显示 / macOS Playwright 提示
         if sys.platform == 'darwin':
@@ -163,6 +184,16 @@ class SenderTab:
         self.btn_x_start = ctk.CTkButton(btn_row, text="▶ 开始发送",
                                          command=self._start_x)
         self.btn_x_start.pack(side="left", padx=4)
+        self.btn_x_pause = ctk.CTkButton(
+            btn_row, text="⏸ 暂停",
+            fg_color="#e67e22", hover_color="#d35400",
+            state="disabled", command=self._pause_x)
+        self.btn_x_pause.pack(side="left", padx=4)
+        self.btn_x_resume = ctk.CTkButton(
+            btn_row, text="▶ 恢复",
+            fg_color="#27ae60", hover_color="#1e8449",
+            state="disabled", command=self._resume_x)
+        self.btn_x_resume.pack(side="left", padx=4)
         self.btn_x_stop = ctk.CTkButton(btn_row, text="⏹ 停止",
                                         fg_color="#c0392b", hover_color="#922b21",
                                         state="disabled", command=self._stop_x)
@@ -188,6 +219,22 @@ class SenderTab:
         current = self.x_source.get() if hasattr(self, "x_source") else "all"
         self.x_source.configure(values=values)
         self.x_source.set(current if current in values else "all")
+
+    def _refresh_x_roles(self):
+        roles = db.list_x_contact_roles()
+        values = ["all"] + roles
+        current = self.x_role.get() if hasattr(self, "x_role") else "all"
+        self.x_role.configure(values=values)
+        self.x_role.set(current if current in values else "all")
+
+    def _on_x_mode_change(self, choice):
+        if choice == "关键人 (x_contacts)":
+            self.x_src_row.pack_forget()
+            self.x_role_row.pack(fill="x", padx=14, pady=2)
+            self._refresh_x_roles()
+        else:
+            self.x_role_row.pack_forget()
+            self.x_src_row.pack(fill="x", padx=14, pady=2)
 
     def _refresh_tg_msg(self):
         tmpl = db.get_active_template("telegram")
@@ -293,10 +340,21 @@ class SenderTab:
                 messagebox.showwarning("未校准", "请先在「⚙️ 设置」页完成坐标校准")
                 return
 
-        sel = self.x_source.get() or "all"
-        source = None if sel == "all" else sel
+        mode_sel = self.x_mode.get() if hasattr(self, "x_mode") else "项目官号 (x_links)"
+        if "x_contacts" in mode_sel:
+            mode = "x_contacts"
+            role_sel = self.x_role.get() if hasattr(self, "x_role") else "all"
+            role   = None if role_sel == "all" else role_sel
+            source = None
+        else:
+            mode = "x_links"
+            role = None
+            sel = self.x_source.get() or "all"
+            source = None if sel == "all" else sel
 
         self.btn_x_start.configure(state="disabled")
+        self.btn_x_pause.configure(state="normal")
+        self.btn_x_resume.configure(state="disabled")
         self.btn_x_stop.configure(state="normal")
         if sys.platform == 'darwin' and hasattr(self, 'btn_x_ready'):
             self.btn_x_ready.configure(state="normal")
@@ -305,12 +363,16 @@ class SenderTab:
             message_name=tmpl["name"],
             message_content=tmpl["content"],
             source=source,
+            mode=mode,
+            role=role,
         )
         threading.Thread(target=self._run_x, daemon=True).start()
 
     def _run_x(self):
         self.x_w.run()
         enqueue(lambda: self.btn_x_start.configure(state="normal"))
+        enqueue(lambda: self.btn_x_pause.configure(state="disabled"))
+        enqueue(lambda: self.btn_x_resume.configure(state="disabled"))
         enqueue(lambda: self.btn_x_stop.configure(state="disabled"))
         if sys.platform == 'darwin' and hasattr(self, 'btn_x_ready'):
             enqueue(lambda: self.btn_x_ready.configure(state="disabled"))
@@ -320,9 +382,24 @@ class SenderTab:
             self.x_w.set_ready()
             self.btn_x_ready.configure(state="disabled")
 
+    def _pause_x(self):
+        if self.x_w:
+            self.x_w.pause()
+        self.btn_x_pause.configure(state="disabled")
+        self.btn_x_resume.configure(state="normal")
+
+    def _resume_x(self):
+        if self.x_w:
+            self.x_w.resume()
+        self.btn_x_pause.configure(state="normal")
+        self.btn_x_resume.configure(state="disabled")
+
     def _stop_x(self):
         if self.x_w:
+            self.x_w.resume()   # 解除暂停，让 _stop 被检测到
             self.x_w.stop()
+        self.btn_x_pause.configure(state="disabled")
+        self.btn_x_resume.configure(state="disabled")
         self.btn_x_stop.configure(state="disabled")
 
     # ════════════════ 邮件发送 ════════════════════════════════
