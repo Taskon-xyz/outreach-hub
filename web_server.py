@@ -189,7 +189,7 @@ def start_worker(worker_id: str, body: WorkerStartBody):
 
     if worker_id == "rootdata":
         from workers.rootdata_worker import RootDataWorker
-        url = p.get("url", "https://www.rootdata.com/Fundraising")
+        url = p.get("url", "https://www.rootdata.com/fundraising")
         max_pages = int(p.get("max_pages", 314))
         start_page = int(p.get("start_page", 1))
         return ok(_run_in_thread(worker_id,

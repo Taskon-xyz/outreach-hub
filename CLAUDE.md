@@ -86,6 +86,7 @@ CustomTkinter 桌面应用，`gui/app.py` 懒加载 7 个标签页：
 | `crunchbase_worker` | Excel | projects | undetected-chromedriver |
 | `crunchbase_discover_worker` | CB Discover 页 | projects | 有头浏览器 |
 | `scraper_worker` | 官网 URL | tg_links + x_links | Playwright headless |
+| `x_profile_search_worker` | x_links handles | x_contacts | Playwright People search |
 | `parser_worker` | TG 群链接 | tg_handles | Telethon |
 | `tgleft_worker` | TG 小群 | tg_left_users | Telethon |
 | `tg_sender_worker` | TG handles | send_log | WinRT OCR + PyAutoGUI |
@@ -97,9 +98,11 @@ CustomTkinter 桌面应用，`gui/app.py` 懒加载 7 个标签页：
 | `cryptorank_worker` | CryptoRank | projects+x_links | Playwright |
 | `email_sender_worker` | email handles | send_log | SMTP |
 
-### SQLite 表（9 张）
+### SQLite 表（10 张）
 
-`projects` / `tg_links` / `x_links` / `tg_handles` / `tg_left_users` / `send_log` / `message_templates` / `settings` / 外加若干扩展表。关键去重：`UNIQUE` 约束 + `INSERT OR IGNORE`。
+`projects` / `tg_links` / `x_links` / `x_contacts` / `tg_handles` / `tg_left_users` / `send_log` / `message_templates` / `settings` / 外加若干扩展表。关键去重：`UNIQUE` 约束 + `INSERT OR IGNORE`。
+
+**x_contacts 表**：通过 `x_profile_search_worker` 写入，存储 Web3 项目关键人（CEO/CMO/Growth/Founder）的 X handle、bio、role、所属项目 handle。与 `x_links` 通过 `x_link_id` 关联。发送时在 `tab_sender.py` X 面板切换「发送目标」为「关键人 (x_contacts)」。
 
 ### 发送冷却机制
 

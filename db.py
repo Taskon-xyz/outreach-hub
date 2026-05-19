@@ -114,6 +114,22 @@ def init_db():
         key   TEXT PRIMARY KEY,
         value TEXT
     );
+
+    -- X 平台关键人（CEO/CMO/Growth）联系表
+    -- 通过搜索 x_links 中的项目 handle 找到将其写入 bio 的用户
+    CREATE TABLE IF NOT EXISTS x_contacts (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        x_link_id      INTEGER REFERENCES x_links(id),
+        project_id     INTEGER REFERENCES projects(id),
+        username       TEXT UNIQUE,
+        display_name   TEXT,
+        bio            TEXT,
+        role           TEXT,
+        project_handle TEXT,
+        skip_reason    TEXT,
+        skipped_at     DATETIME,
+        added_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
     """)
     conn.commit()
     # 为旧数据库补加列（幂等，列已存在时忽略）
@@ -129,6 +145,7 @@ def init_db():
         "ALTER TABLE projects ADD COLUMN source TEXT",
         "ALTER TABLE tg_left_users ADD COLUMN project_id INTEGER REFERENCES projects(id)",
         "ALTER TABLE tg_links ADD COLUMN source TEXT",
+        "ALTER TABLE x_links ADD COLUMN profile_search_status TEXT",
     ]:
         try:
             conn.execute(sql)
@@ -730,6 +747,119 @@ def list_x_sources():
         conn.close()
 
 
+def get_x_links_for_profile_search():
+    """返回尚未做过 Profile Search 的 x_links 记录（id, handle, project_id）"""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, handle, project_id FROM x_links"
+            " WHERE profile_search_status IS NULL OR profile_search_status != 'done'"
+        ).fetchall()
+        return [(r["id"], r["handle"], r["project_id"]) for r in rows]
+    finally:
+        conn.close()
+
+
+def mark_x_link_profile_searched(x_link_id):
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE x_links SET profile_search_status='done' WHERE id=?",
+            (x_link_id,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def reset_x_links_profile_search():
+    """重置所有 x_links 的 profile_search_status，允许重新搜索。"""
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE x_links SET profile_search_status=NULL")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ─── X Contacts ──────────────────────────────────────────────
+def insert_x_contact(x_link_id, project_id, username, display_name, bio, role, project_handle):
+    """写入 x_contacts。返回 True=新增，False=已存在。"""
+    username = username.lower().strip().lstrip('@')
+    if not username:
+        return False
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO x_contacts
+               (x_link_id, project_id, username, display_name, bio, role, project_handle)
+               VALUES (?,?,?,?,?,?,?)""",
+            (x_link_id, project_id, username, display_name, bio, role, project_handle)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def count_x_contacts():
+    conn = get_conn()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM x_contacts").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def get_unsent_x_contacts(role=None):
+    """返回可发送的 x_contacts handle（遵守冷却期，排除已跳过）。
+    role: None/'all'=全部  'ceo'/'cmo'/'growth'=按角色筛选
+    """
+    clause, params = _cooldown_clause("twitter", col="username")
+    conn = get_conn()
+    try:
+        if role and role != "all":
+            rows = conn.execute(
+                f"SELECT username FROM x_contacts"
+                f" WHERE role=? AND skip_reason IS NULL AND {clause}",
+                (role,) + params
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT username FROM x_contacts"
+                f" WHERE skip_reason IS NULL AND {clause}",
+                params
+            ).fetchall()
+        return [r["username"] for r in rows]
+    finally:
+        conn.close()
+
+
+def list_x_contact_roles():
+    """返回 x_contacts 中所有非空 distinct role（用于发送页下拉）"""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT role FROM x_contacts"
+            " WHERE role IS NOT NULL AND role != ''"
+            " ORDER BY role"
+        ).fetchall()
+        return [r["role"] for r in rows]
+    finally:
+        conn.close()
+
+
+def skip_x_contact(username, reason="manual"):
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE x_contacts SET skip_reason=?, skipped_at=CURRENT_TIMESTAMP WHERE username=?",
+            (reason, username)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ─── Skip Handle ─────────────────────────────────────────────
 def skip_handle(username, reason="ocr_no_match"):
     """标记 tg_contacts 中的 handle 为跳过，不从队列删除"""
@@ -1060,9 +1190,11 @@ def get_stats():
         "projects":      count_projects(),
         "tg_links":      count_tg_links(),
         "x_links":       count_x_links(),
+        "x_contacts":    count_x_contacts(),
         "tg_handles":    count_tg_handles(),
         "tg_left_users": count_tg_left_users(),
         "sent_total":    count_send_log(),
         "tg_pending":    len(get_unsent_tg_by_source(None)),
         "x_pending":     len(get_unsent_x_handles()),
+        "xc_pending":    len(get_unsent_x_contacts()),
     }

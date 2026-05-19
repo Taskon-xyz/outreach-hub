@@ -14,11 +14,14 @@ from workers.base_worker import BaseWorker
 
 class XSenderWorker(BaseWorker):
     def __init__(self, log_callback, progress_callback=None,
-                 message_name="", message_content="", source=None):
+                 message_name="", message_content="", source=None,
+                 mode="x_links", role=None):
         super().__init__(log_callback, progress_callback)
         self.message_name    = message_name
         self.message_content = message_content
-        self.source          = source  # None=全部，其他=分类过滤
+        self.source          = source
+        self.mode            = mode
+        self.role            = role
 
     def run(self):
         try:
@@ -39,15 +42,22 @@ class XSenderWorker(BaseWorker):
             self.log("消息内容为空，请先在「文案」页配置激活文案")
             return
 
-        handles = db.get_unsent_x_handles(source=self.source)
-        if not handles:
-            src_label = {"cb_excel": "仓库导入", "cb_discover": "融资项目（CB Discover）",
-                         "rootdata": "融资项目（RootData）", "chainscope": "链上变化",
-                         "tokenfinder": "低交易量", "campaign": "活动举办"}.get(self.source, "全部")
-            self.log(f"没有待发送的 X 用户（{src_label}）")
-            return
-
-        self.log(f"待发 {len(handles)} 个 X 用户")
+        if self.mode == "x_contacts":
+            handles = db.get_unsent_x_contacts(role=self.role)
+            role_label = self.role or "全部角色"
+            if not handles:
+                self.log(f"没有待发送的 X 关键人（{role_label}）")
+                return
+            self.log(f"待发 {len(handles)} 个关键人（{role_label}）")
+        else:
+            handles = db.get_unsent_x_handles(source=self.source)
+            if not handles:
+                src_label = {"cb_excel": "仓库导入", "cb_discover": "融资项目（CB Discover）",
+                             "rootdata": "融资项目（RootData）", "chainscope": "链上变化",
+                             "tokenfinder": "低交易量", "campaign": "活动举办"}.get(self.source, "全部")
+                self.log(f"没有待发送的 X 用户（{src_label}）")
+                return
+            self.log(f"待发 {len(handles)} 个 X 用户")
         self.log("5 秒后开始，请切换到 Chrome（Twitter）...")
         for i in range(5, 0, -1):
             if self._stop:
@@ -68,7 +78,12 @@ class XSenderWorker(BaseWorker):
             )
 
             if success:
-                db.log_send(handle, "twitter", self.source or "x_link", self.message_name)
+                src_tag = (
+                    f"x_contacts:{self.role or 'all'}"
+                    if self.mode == "x_contacts"
+                    else (self.source or "x_link")
+                )
+                db.log_send(handle, "twitter", src_tag, self.message_name)
                 self.log(f"  ✓ 已发送")
             else:
                 self.log(f"  ✗ 发送失败，跳过")

@@ -6,29 +6,24 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     # GUI
     "customtkinter>=5.2.0,<6",
-
     # 浏览器自动化
     "playwright>=1.40.0,<2",
     "undetected-chromedriver>=3.5.0,<4",
-
     # Telegram
     "telethon>=1.34.0,<2",
-
     # 数据处理
     "pandas>=2.0.0,<3",
     "openpyxl>=3.1.0,<4",
-
     # 桌面自动化（Windows 发送用）
     "pyautogui>=0.9.54,<1",
     "pyperclip>=1.8.0,<2",
-
     # OCR
     "mss>=10.0.0,<11",
     "pillow>=10.0.0,<11",
-
+    # HTML 解析
+    "beautifulsoup4>=4.12.0,<5",
     # HTTP / API
     "requests>=2.31.0,<3",
-
     # Web UI 后端
     "fastapi>=0.100.0,<1",
     "uvicorn[standard]>=0.20.0,<1",

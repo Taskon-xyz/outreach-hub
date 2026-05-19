@@ -12,6 +12,10 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
 from workers.base_worker import BaseWorker
+from workers.browser_stealth import (
+    STEALTH_ARGS, IGNORE_DEFAULT_ARGS, STEALTH_INIT_SCRIPT,
+    CONTEXT_KWARGS, EXTRA_HTTP_HEADERS,
+)
 
 TG_PATTERN = r't\.me/(?:joinchat/[\w\d_-]+|(?!(?:share|s|addstickers|setlanguage)/)[\w\d_]{5,})'
 X_PATTERN  = r'(?:twitter\.com|x\.com)/(?!(?:home|explore|notifications|messages|search|tos|privacy|i|settings|hashtag|intent)\b)([\w\d_]{1,15})'
@@ -100,13 +104,18 @@ class ScraperWorker(BaseWorker):
         self._safe_log("[浏览器] 正在启动 Chromium...")
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            browser = await p.chromium.launch(
+                headless=True,
+                args=STEALTH_ARGS,
+                ignore_default_args=IGNORE_DEFAULT_ARGS,
+            )
 
             # 每个并发通道持有独立的 context，避免并发 new_page() 竞争
             lanes = []
             for _ in range(self.concurrency):
-                ctx = await browser.new_context(user_agent=UA)
+                ctx = await browser.new_context(**CONTEXT_KWARGS)
+                await ctx.add_init_script(STEALTH_INIT_SCRIPT)
+                await ctx.set_extra_http_headers(EXTRA_HTTP_HEADERS)
                 lanes.append({"ctx": ctx, "pages": 0, "lock": asyncio.Lock()})
             self._safe_log(f"[浏览器] 已启动，{len(lanes)} 个 context")
 
@@ -119,7 +128,9 @@ class ScraperWorker(BaseWorker):
                     await lane["ctx"].close()
                 except Exception:
                     pass
-                lane["ctx"] = await browser.new_context(user_agent=UA)
+                lane["ctx"] = await browser.new_context(**CONTEXT_KWARGS)
+                await lane["ctx"].add_init_script(STEALTH_INIT_SCRIPT)
+                await lane["ctx"].set_extra_http_headers(EXTRA_HTTP_HEADERS)
                 lane["pages"] = 0
 
             async def process_one(idx, pid, url, src, lane):

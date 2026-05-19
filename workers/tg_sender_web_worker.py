@@ -12,6 +12,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
 import config
 from workers.base_worker import BaseWorker
+from workers.browser_stealth import (
+    STEALTH_ARGS, IGNORE_DEFAULT_ARGS, STEALTH_INIT_SCRIPT,
+    CONTEXT_KWARGS, EXTRA_HTTP_HEADERS,
+)
 
 TG_WEB_URL  = "https://web.telegram.org/k/"
 SESSION_DIR = "data/tg_web_session"
@@ -69,14 +73,13 @@ class TGSenderWebWorker(BaseWorker):
                 SESSION_DIR,
                 headless=False,
                 channel="chrome",
-                viewport={"width": 1280, "height": 900},
-                args=["--disable-blink-features=AutomationControlled"],
-                ignore_default_args=["--enable-automation"],
+                args=STEALTH_ARGS,
+                ignore_default_args=IGNORE_DEFAULT_ARGS,
+                **CONTEXT_KWARGS,
             )
+            await context.add_init_script(STEALTH_INIT_SCRIPT)
+            await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
             page = context.pages[0] if context.pages else await context.new_page()
-            await page.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
-            )
             return page, context
         except Exception as e:
             self.log(f"[浏览器] 启动失败：{str(e)[:80]}")

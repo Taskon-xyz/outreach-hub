@@ -8,13 +8,14 @@ import customtkinter as ctk
 
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from workers.scraper_worker             import ScraperWorker
-from workers.crunchbase_discover_worker import CrunchbaseDiscoverWorker
-from workers.rootdata_worker            import RootDataWorker
-from workers.chainscope_worker          import ChainScopeWorker
-from workers.token_finder_worker        import TokenFinderWorker
+from workers.scraper_worker              import ScraperWorker
+from workers.crunchbase_discover_worker  import CrunchbaseDiscoverWorker
+from workers.rootdata_worker             import RootDataWorker
+from workers.chainscope_worker           import ChainScopeWorker
+from workers.token_finder_worker         import TokenFinderWorker
 from workers.campaign_worker             import CampaignWorker
 from workers.cryptorank_worker           import CryptoRankWorker
+from workers.x_profile_search_worker     import XProfileSearchWorker
 import db
 from gui.thread_bridge import enqueue
 
@@ -112,6 +113,12 @@ SOURCES = [
         "sub":  "Funding Rounds 列表",
         "panel": "_build_cr_panel",
     },
+    {
+        "id": "xps",
+        "name": "X 关键人搜索",
+        "sub":  "CEO/CMO/Growth → x_contacts",
+        "panel": "_build_xps_panel",
+    },
 ]
 
 # 每个面板的 panel frame（由 _build_all_panels 创建后填充到右侧）
@@ -122,12 +129,13 @@ _active_id = None
 class ScraperTab:
     def __init__(self, parent):
         self.parent     = parent
-        self.cb_worker = None
-        self.rd_worker = None
-        self.cr_worker = None
-        self.sc_worker = None
-        self.cs_worker = None
-        self.tf_worker = None
+        self.cb_worker  = None
+        self.rd_worker  = None
+        self.cr_worker  = None
+        self.sc_worker  = None
+        self.cs_worker  = None
+        self.tf_worker  = None
+        self.xps_worker = None
         self._cb_login_event = threading.Event()
         self.var_use_llm = None   # 初始化，避免 _sc_start 访问时异常
         self._build()
@@ -207,6 +215,7 @@ class ScraperTab:
         self._build_ct_panel(_panel_frames["ct"])
         self._build_ck_panel(_panel_frames["ck"])
         self._build_cr_panel(_panel_frames["cr"])
+        self._build_xps_panel(_panel_frames["xps"])
 
         # 默认选中第一个（官网爬虫，最核心）
         self._select_source(SOURCES[0])
@@ -362,9 +371,9 @@ class ScraperTab:
         url_row.pack(fill="x", padx=14, pady=(0, 2))
         ctk.CTkLabel(url_row, text="起始URL：", width=62, anchor="w").pack(side="left")
         self.rd_url_entry = ctk.CTkEntry(
-            url_row, placeholder_text="https://www.rootdata.com/Fundraising")
+            url_row, placeholder_text="https://www.rootdata.com/fundraising")
         self.rd_url_entry.pack(side="left", fill="x", expand=True)
-        self.rd_url_entry.insert(0, "https://www.rootdata.com/Fundraising")
+        self.rd_url_entry.insert(0, "https://www.rootdata.com/fundraising")
 
         page_row = ctk.CTkFrame(parent, fg_color="transparent")
         page_row.pack(fill="x", padx=14, pady=(0, 4))
@@ -768,7 +777,7 @@ class ScraperTab:
         self.rd_lbl_count.configure(text=f"数据库已有官网：{db.count_projects()} 条")
 
     def _rd_start(self):
-        url = self.rd_url_entry.get().strip() or "https://www.rootdata.com/Fundraising"
+        url = self.rd_url_entry.get().strip() or "https://www.rootdata.com/fundraising"
         try:
             max_pages = int(self.rd_max_pages.get() or 314)
         except ValueError:
@@ -1074,3 +1083,145 @@ class ScraperTab:
             self.sc_worker.stop()
         self._sc_log("停止信号已发送...")
         self.sc_btn_stop.configure(state="disabled")
+
+    # ════════════════ X 关键人搜索 ══════════════════════════════
+    def _build_xps_panel(self, parent):
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(3, weight=1)
+
+        ctk.CTkLabel(parent, text="X 关键人搜索",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 4))
+        ctk.CTkLabel(
+            parent,
+            text=(
+                "对 x_links 中每个项目官号，在 X 搜索 People，\n"
+                "找到将该 handle 写入个人 bio 的用户，\n"
+                "筛选 CEO / CMO / Growth / Founder，写入 x_contacts 表。"
+            ),
+            text_color="gray", wraplength=420, justify="left",
+        ).pack(anchor="w", padx=14, pady=(0, 4))
+
+        count_row = ctk.CTkFrame(parent, fg_color="transparent")
+        count_row.pack(fill="x", padx=14, pady=(0, 2))
+        self.xps_lbl_count = ctk.CTkLabel(count_row, text="", text_color="#4CAF50")
+        self.xps_lbl_count.pack(side="left")
+        ctk.CTkButton(count_row, text="重置已搜索", width=90, height=22,
+                      fg_color="gray40", hover_color="gray30",
+                      command=self._xps_reset).pack(side="left", padx=8)
+        self._xps_refresh_count()
+
+        self.xps_progress = ctk.CTkProgressBar(parent)
+        self.xps_progress.pack(fill="x", padx=14, pady=6)
+        self.xps_progress.set(0)
+        self.xps_lbl_progress = ctk.CTkLabel(parent, text="", text_color="gray")
+        self.xps_lbl_progress.pack()
+
+        self.xps_log = ctk.CTkTextbox(parent, font=ctk.CTkFont(family="Consolas", size=11))
+        self.xps_log.pack(fill="both", expand=True, padx=10, pady=4)
+        self.xps_log.configure(state="disabled")
+
+        btn_row = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_row.pack(pady=6)
+        self.xps_btn_start = ctk.CTkButton(btn_row, text="▶ 开始搜索",
+                                           command=self._xps_start)
+        self.xps_btn_start.pack(side="left", padx=4)
+        self.xps_btn_pause = ctk.CTkButton(
+            btn_row, text="⏸ 暂停",
+            fg_color="#e67e22", hover_color="#d35400",
+            state="disabled", command=self._xps_pause)
+        self.xps_btn_pause.pack(side="left", padx=4)
+        self.xps_btn_resume = ctk.CTkButton(
+            btn_row, text="▶ 恢复",
+            fg_color="#27ae60", hover_color="#1e8449",
+            state="disabled", command=self._xps_resume)
+        self.xps_btn_resume.pack(side="left", padx=4)
+        self.xps_btn_stop = ctk.CTkButton(
+            btn_row, text="⏹ 停止",
+            fg_color="#c0392b", hover_color="#922b21",
+            state="disabled", command=self._xps_stop)
+        self.xps_btn_stop.pack(side="left", padx=4)
+        if sys.platform == 'darwin':
+            self.xps_btn_ready = ctk.CTkButton(
+                btn_row, text="已登录就绪",
+                fg_color="#2196F3", hover_color="#1976D2",
+                state="disabled", command=self._xps_ready)
+            self.xps_btn_ready.pack(side="left", padx=4)
+
+    def _xps_refresh_count(self):
+        if hasattr(self, 'xps_lbl_count'):
+            pending = len(db.get_x_links_for_profile_search())
+            total   = db.count_x_contacts()
+            self.xps_lbl_count.configure(
+                text=f"待搜索：{pending} 个 | 已入库关键人：{total} 个"
+            )
+
+    def _xps_reset(self):
+        db.reset_x_links_profile_search()
+        self._xps_refresh_count()
+        self._xps_log("已重置所有项目的搜索状态，下次运行将重新扫描所有 following 列表")
+
+    def _xps_log(self, msg):
+        def _do():
+            self.xps_log.configure(state="normal")
+            self.xps_log.insert("end", msg + "\n")
+            self.xps_log.see("end")
+            self.xps_log.configure(state="disabled")
+        enqueue(_do)
+
+    def _xps_progress(self, cur, total):
+        def _do():
+            val = cur / total if total else 0
+            self.xps_progress.set(val)
+            self.xps_lbl_progress.configure(text=f"{cur}/{total}")
+        enqueue(_do)
+
+    def _xps_start(self):
+        self._xps_refresh_count()
+        self.xps_btn_start.configure(state="disabled")
+        self.xps_btn_pause.configure(state="normal")
+        self.xps_btn_resume.configure(state="disabled")
+        self.xps_btn_stop.configure(state="normal")
+        if sys.platform == 'darwin' and hasattr(self, 'xps_btn_ready'):
+            self.xps_btn_ready.configure(state="normal")
+        self.xps_log.configure(state="normal")
+        self.xps_log.delete("1.0", "end")
+        self.xps_log.configure(state="disabled")
+        self.xps_progress.set(0)
+        self.xps_worker = XProfileSearchWorker(self._xps_log, self._xps_progress)
+        threading.Thread(target=self._xps_run, daemon=True).start()
+
+    def _xps_run(self):
+        self.xps_worker.run()
+        enqueue(lambda: self.xps_btn_start.configure(state="normal"))
+        enqueue(lambda: self.xps_btn_pause.configure(state="disabled"))
+        enqueue(lambda: self.xps_btn_resume.configure(state="disabled"))
+        enqueue(lambda: self.xps_btn_stop.configure(state="disabled"))
+        if sys.platform == 'darwin' and hasattr(self, 'xps_btn_ready'):
+            enqueue(lambda: self.xps_btn_ready.configure(state="disabled"))
+        enqueue(self._xps_refresh_count)
+
+    def _xps_ready(self):
+        if self.xps_worker and hasattr(self.xps_worker, 'set_ready'):
+            self.xps_worker.set_ready()
+            self.xps_btn_ready.configure(state="disabled")
+
+    def _xps_pause(self):
+        if self.xps_worker:
+            self.xps_worker.pause()
+        self.xps_btn_pause.configure(state="disabled")
+        self.xps_btn_resume.configure(state="normal")
+
+    def _xps_resume(self):
+        if self.xps_worker:
+            self.xps_worker.resume()
+        self.xps_btn_pause.configure(state="normal")
+        self.xps_btn_resume.configure(state="disabled")
+
+    def _xps_stop(self):
+        if self.xps_worker:
+            self.xps_worker.resume()   # 解除暂停，让 _stop 能被检测到
+            self.xps_worker.stop()
+        self._xps_log("停止信号已发送...")
+        self.xps_btn_pause.configure(state="disabled")
+        self.xps_btn_resume.configure(state="disabled")
+        self.xps_btn_stop.configure(state="disabled")
