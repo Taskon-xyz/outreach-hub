@@ -9,7 +9,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Web3 Outreach Hub")
-        self.geometry("900x640")
+        self.geometry("1200x800")
         self.resizable(True, True)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")

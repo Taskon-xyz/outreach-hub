@@ -16,6 +16,7 @@ from workers.token_finder_worker         import TokenFinderWorker
 from workers.campaign_worker             import CampaignWorker
 from workers.cryptorank_worker           import CryptoRankWorker
 from workers.x_profile_search_worker     import XProfileSearchWorker
+from workers.manual_import_worker        import ManualImportWorker
 import db
 from gui.thread_bridge import enqueue
 
@@ -118,6 +119,10 @@ SOURCES = [
         "name": "X 关键人搜索",
         "sub":  "CEO/CMO/Growth → x_contacts",
         "panel": "_build_xps_panel",
+        "id": "import",
+        "name": "文件导入",
+        "sub":  "Excel/CSV 批量导入项目",
+        "panel": "_build_import_panel",
     },
 ]
 
@@ -137,6 +142,7 @@ class ScraperTab:
         self.tf_worker  = None
         self.xps_worker = None
         self._cb_login_event = threading.Event()
+        self.import_worker = None
         self.var_use_llm = None   # 初始化，避免 _sc_start 访问时异常
         self._build()
 
@@ -216,6 +222,7 @@ class ScraperTab:
         self._build_ck_panel(_panel_frames["ck"])
         self._build_cr_panel(_panel_frames["cr"])
         self._build_xps_panel(_panel_frames["xps"])
+        self._build_import_panel(_panel_frames["import"])
 
         # 默认选中第一个（官网爬虫，最核心）
         self._select_source(SOURCES[0])
@@ -223,7 +230,8 @@ class ScraperTab:
     def _refresh_all_tag_selectors(self):
         """运行完成后刷新所有 source tag 下拉列表"""
         for attr in ("cb_tag_entry", "rd_tag_entry", "cs_tag_entry",
-                     "tf_tag_entry", "ct_tag_entry", "ck_tag_entry", "cr_tag_entry"):
+                     "tf_tag_entry", "ct_tag_entry", "ck_tag_entry", "cr_tag_entry",
+                     "import_tag_entry"):
             widget = getattr(self, attr, None)
             if widget:
                 widget.refresh_tags()
@@ -1034,6 +1042,140 @@ class ScraperTab:
             self.ck_worker.stop()
         self._ck_log("停止信号已发送...")
         self.ck_btn_stop.configure(state="disabled")
+
+    # ════════════════ 文件导入 ═════════════════════════════════════════
+    def _build_import_panel(self, parent):
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(5, weight=1)
+
+        ctk.CTkLabel(parent, text="Excel/CSV 文件导入",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 4))
+        ctk.CTkLabel(
+            parent,
+            text="从 Excel(.xlsx) 或 CSV 文件批量导入项目数据（项目名、官网、X/TG handle、邮箱）。\n"
+                 "列名支持中英文自动匹配，多个 handle 用逗号或分号分隔。",
+            text_color="gray", wraplength=480, justify="left"
+        ).pack(anchor="w", padx=14, pady=(0, 6))
+
+        # 文件选择行
+        file_row = ctk.CTkFrame(parent, fg_color="transparent")
+        file_row.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(file_row, text="文件：", width=50, anchor="w").pack(side="left")
+        self.import_file_entry = ctk.CTkEntry(
+            file_row, placeholder_text="选择 .xlsx / .csv 文件"
+        )
+        self.import_file_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ctk.CTkButton(
+            file_row, text="浏览...", width=60,
+            command=self._import_browse
+        ).pack(side="left")
+
+        # Source tag 行
+        tag_row = ctk.CTkFrame(parent, fg_color="transparent")
+        tag_row.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(tag_row, text="tag：", width=50, anchor="w").pack(side="left")
+        self.import_tag_entry = SourceTagSelector(
+            tag_row, placeholder_text="必填，如 manual-batch-01"
+        )
+        self.import_tag_entry.pack(side="left", fill="x", expand=True)
+
+        self.import_lbl_count = ctk.CTkLabel(parent, text="", text_color="#4CAF50")
+        self.import_lbl_count.pack(anchor="w", padx=14)
+        self._import_refresh_count()
+
+        self.import_progress = ctk.CTkProgressBar(parent)
+        self.import_progress.pack(fill="x", padx=14, pady=4)
+        self.import_progress.set(0)
+        self.import_lbl_progress = ctk.CTkLabel(parent, text="", text_color="gray")
+        self.import_lbl_progress.pack()
+
+        self.import_log = ctk.CTkTextbox(parent, font=ctk.CTkFont(family="Consolas", size=11))
+        self.import_log.pack(fill="both", expand=True, padx=10, pady=4)
+        self.import_log.configure(state="disabled")
+
+        btn_row = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_row.pack(pady=6)
+        self.import_btn_start = ctk.CTkButton(btn_row, text="▶ 开始导入",
+                                              command=self._import_start)
+        self.import_btn_start.pack(side="left", padx=4)
+        self.import_btn_stop = ctk.CTkButton(
+            btn_row, text="⏹ 停止",
+            fg_color="#c0392b", hover_color="#922b21",
+            state="disabled", command=self._import_stop)
+        self.import_btn_stop.pack(side="left", padx=4)
+
+    def _import_browse(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="选择 Excel 或 CSV 文件",
+            filetypes=[("Excel/CSV", "*.xlsx *.xls *.csv"), ("所有文件", "*.*")]
+        )
+        if path:
+            self.import_file_entry.delete(0, "end")
+            self.import_file_entry.insert(0, path)
+
+    def _import_log_fn(self, msg):
+        def _do():
+            self.import_log.configure(state="normal")
+            self.import_log.insert("end", msg + "\n")
+            self.import_log.see("end")
+            self.import_log.configure(state="disabled")
+        enqueue(_do)
+
+    def _import_refresh_count(self):
+        self.import_lbl_count.configure(
+            text=f"数据库已有：项目 {db.count_projects()}，"
+                 f"X links {db.count_x_links()}，"
+                 f"TG links {db.count_tg_links()}"
+        )
+
+    def _import_start(self):
+        path = self.import_file_entry.get().strip()
+        if not path or not os.path.isfile(path):
+            self._import_log_fn("请选择有效的文件")
+            return
+        tag = (self.import_tag_entry.get() or "").strip()
+        if not tag:
+            self._import_log_fn("请填写 source tag（本批次分组标签，必填）")
+            return
+        if tag == "tg_left":
+            self._import_log_fn("source tag 不能为保留值 'tg_left'")
+            return
+
+        self.import_btn_start.configure(state="disabled")
+        self.import_btn_stop.configure(state="normal")
+        self.import_log.configure(state="normal")
+        self.import_log.delete("1.0", "end")
+        self.import_log.configure(state="disabled")
+        self.import_progress.set(0)
+
+        self.import_worker = ManualImportWorker(
+            file_path=path,
+            source_tag=tag,
+            log_callback=self._import_log_fn,
+            progress_callback=self._import_progress_cb,
+        )
+        threading.Thread(target=self._import_run, daemon=True).start()
+
+    def _import_run(self):
+        self.import_worker.run()
+        enqueue(lambda: self.import_btn_start.configure(state="normal"))
+        enqueue(lambda: self.import_btn_stop.configure(state="disabled"))
+        enqueue(self._import_refresh_count)
+        enqueue(self._refresh_all_tag_selectors)
+
+    def _import_progress_cb(self, cur, total):
+        if total:
+            enqueue(lambda: self.import_progress.set(cur / total))
+            enqueue(lambda: self.import_lbl_progress.configure(text=f"{cur} / {total}"))
+        else:
+            enqueue(lambda: self.import_lbl_progress.configure(text=f"已处理 {cur} 行..."))
+
+    def _import_stop(self):
+        if self.import_worker:
+            self.import_worker.stop()
+        self._import_log_fn("停止信号已发送...")
+        self.import_btn_stop.configure(state="disabled")
 
     # ════════════════ 官网爬虫控制（保留在 ScraperTab 主类）═════════════
     def _sc_log(self, msg):
