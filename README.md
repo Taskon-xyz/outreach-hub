@@ -83,8 +83,9 @@ uv run python web_server.py
 | 命令 | 说明 |
 |------|------|
 | `./scripts/start_chrome_cdp.sh` | **默认**。隔离 profile（`data/chrome_cdp_session/`），全新登录 |
-| `./scripts/start_chrome_cdp.sh --system` | **从日常 Chrome 拷贝 cookies / 登录态到隔离 profile**，X 不会判定为新设备 |
-| `./scripts/start_chrome_cdp.sh --system --refresh` | 强制重新拷贝（日常 Chrome 改密码后用一次） |
+| `./scripts/start_chrome_cdp.sh --system` | **从日常 Chrome 拷贝 cookies / 登录态到隔离 profile**，X 不会判定为新设备。自动扫描所有 profile 挑含 X 登录态的那个 |
+| `./scripts/start_chrome_cdp.sh --system --refresh` | 强制重新拷贝（日常 Chrome 改密码或换号后用一次） |
+| `./scripts/start_chrome_cdp.sh --system --profile "Profile 1"` | 多个 profile 都登录了 X 时，显式指定从哪个拷 |
 | `./scripts/start_chrome_cdp.sh --help` | 查看用法 |
 
 #### 何时需要 `--system`？
@@ -97,7 +98,11 @@ X 把脚本启动的「干净 Chrome」视作新设备，首次登录时常常**
 ./scripts/start_chrome_cdp.sh --system
 ```
 
-`--system` 首次启动会从 `~/Library/Application Support/Google/Chrome/Default/` 拷贝 cookies、Local State 等认证文件到隔离 profile，弹出的 Chrome 直接是登录态，X 把你视作老用户。
+`--system` 启动时会**扫描你日常 Chrome 的所有 profile**（`Default`、`Profile 1`、`Profile 2` ...），通过 SQLite 直接查每个 profile 的 cookies 数据库，找出含 X `auth_token` 的那个，把它的 cookies / Local State 拷贝到隔离 profile。弹出的 Chrome 直接是登录态，X 把你视作老用户。
+
+- **只有一个 profile 登录了 X**：自动选中，无需任何参数
+- **多个 profile 都登录了 X**：脚本会列出所有候选并报错退出，让你用 `--profile NAME` 显式指定，例如 `--profile "Profile 1"`
+- **没有任何 profile 登录 X**：脚本会要求你先打开日常 Chrome 登录 `https://x.com`，⌘Q 退出再重试
 
 > **为什么不直接复用日常 profile？** Chrome 136+ 出于安全考虑，禁止在默认 profile 上开 `--remote-debugging-port`（防恶意软件偷登录态）。所以脚本必须用独立 profile，再把日常 Chrome 的认证文件搬过去。
 
