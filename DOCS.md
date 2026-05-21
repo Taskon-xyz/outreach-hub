@@ -38,8 +38,8 @@
 | — | — | 直接导入官网 Excel | `website_import_worker.py` |
 | — | — | Crunchbase Discover 逐页爬官网 | `crunchbase_discover_worker.py` |
 | — | — | RootData Fundraising 抓项目 | `rootdata_worker.py` |
-| — | — | Old汤-链上抓项目官网+Twitter | `chainscope_worker.py` |
-| — | — | Old汤-低交易量抓 Twitter | `token_finder_worker.py` |
+| — | — | ChainScope 抓项目官网+Twitter | `chainscope_worker.py` |
+| — | — | TokenFinder 抓 Twitter | `token_finder_worker.py` |
 | — | — | 活动项目 Twitter/KOL 账号导入 | `campaign_worker.py` |
 
 ### 与原始脚本的差异
@@ -111,8 +111,8 @@ outreach-hub/
 │   ├── tg_sender_worker.py      # TG DM 发送（WinRT OCR + PyAutoGUI）
 │   ├── x_sender_worker.py       # X DM 发送（PyAutoGUI 坐标点击）
 │   ├── rootdata_worker.py       # RootData Fundraising 抓项目
-│   ├── chainscope_worker.py      # Old汤-链上抓官网+Twitter
-│   ├── token_finder_worker.py    # Old汤-低交易量抓 Twitter
+│   ├── chainscope_worker.py      # ChainScope 抓官网+Twitter
+│   ├── token_finder_worker.py    # TokenFinder 抓 Twitter
 │   └── campaign_worker.py       # 活动项目 Twitter/KOL 导入
 │
 ├── gui/
@@ -147,7 +147,7 @@ Crunchbase Excel ─────────────────────
 Crunchbase Discover ──────────────────────────────────────────┤
 官网 Excel 直接导入 ───────────────────────────────────────────┤
 RootData Fundraising ─────────────────────────────────────────┤
-Old汤-链上 ───────────────────────────────────────────────────┤
+ChainScope ───────────────────────────────────────────────────┤
 活动项目（Twitter/KOL） ──────────────────────────────────────┘
         │
         ▼
@@ -518,8 +518,8 @@ class SomeTab:
 | `cb_excel` | Crunchbase Excel + 官网爬虫 | 从 CB 导出项目官网后 ScraperWorker 解析 |
 | `cb_discover` | Crunchbase Discover | 通过 ScraperTab 导入 |
 | `rootdata` | RootData Fundraising | RootDataWorker 直接抓取 |
-| `chainscope` | Old汤-链上变化 | ChainScopeWorker |
-| `tokenfinder` | Old汤-低交易量 | TokenFinderWorker |
+| `chainscope` | 链上变化（ChainScope） | ChainScopeWorker |
+| `tokenfinder` | 低交易量（TokenFinder） | TokenFinderWorker |
 | `campaign` | 活动项目列表 | CampaignWorker |
 | `None`（存量） | 仓库导入 | 历史存量数据，source 字段为 NULL |
 
@@ -561,8 +561,8 @@ class SomeTab:
 |--------|--------|------|------|
 | Crunchbase → 官网 | CrunchbaseDiscoverWorker | projects | 浏览器打开，用户登录后逐页抓 |
 | RootData → 官网+TG+X | RootDataWorker | projects+tg_links+x_links | 有头模式，用户就绪后开始 |
-| Old汤-链上 | ChainScopeWorker | projects+x_links | 纯 API，数据重复停止 |
-| Old汤-低交易量 | TokenFinderWorker | x_links | 纯 API，offset 翻页 |
+| 链上变化 | ChainScopeWorker | projects+x_links | 纯 API，数据重复停止 |
+| 低交易量 | TokenFinderWorker | x_links | 纯 API，offset 翻页 |
 | 活动项目-Twitter | CampaignWorker | x_links | `/api/projects` |
 | 活动项目-KOL | CampaignWorker | x_links | `/api/kol-projects` |
 

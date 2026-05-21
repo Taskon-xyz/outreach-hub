@@ -1,5 +1,5 @@
 """
-Old汤-链上 Worker — 从 chainscope.taskon.xyz 抓取项目官网和 Twitter
+ChainScope Worker — 从 chainscope.taskon.xyz 抓取项目官网和 Twitter
 字段：project_name / website / twitter
 纯 API 翻页，数据与上一页完全一致则停止
 """

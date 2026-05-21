@@ -428,14 +428,14 @@ class ScraperTab:
             state="disabled", command=self._rd_stop)
         self.rd_btn_stop.pack(side="left", padx=3)
 
-    # ════════════════ Old汤-链上变化 ══════════════════════════════════
+    # ════════════════ 链上变化 ══════════════════════════════════
     def _build_cs_panel(self, parent):
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(1, weight=1)
 
         ctk.CTkLabel(
             parent,
-            text="从 Old汤-链上 逐页抓取项目官网和 Twitter，入库 projects + x_links。\n"
+            text="从 ChainScope 逐页抓取项目官网和 Twitter，入库 projects + x_links。\n"
                  "纯 API 翻页，相邻两页数据一致则自动停止。",
             text_color="gray", wraplength=400, justify="left"
         ).pack(anchor="w", padx=14, pady=(10, 4))
@@ -466,14 +466,14 @@ class ScraperTab:
             state="disabled", command=self._cs_stop)
         self.cs_btn_stop.pack(side="left", padx=3)
 
-    # ════════════════ Old汤-低交易量 ══════════════════════════════════
+    # ════════════════ 低交易量 ══════════════════════════════════
     def _build_tf_panel(self, parent):
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(1, weight=1)
 
         ctk.CTkLabel(
             parent,
-            text="从 Old汤-低交易量 逐页抓取 Twitter 账号，写入 x_links 表。\n"
+            text="从 TokenFinder 逐页抓取 Twitter 账号，写入 x_links 表。\n"
                  "纯 API 翻页，offset += 50 直到拿完全部。",
             text_color="gray", wraplength=400, justify="left"
         ).pack(anchor="w", padx=14, pady=(10, 4))
@@ -839,7 +839,7 @@ class ScraperTab:
         self._rd_log("停止信号已发送...")
         self.rd_btn_stop.configure(state="disabled")
 
-    # ════════════════ Old汤-链上 控制 ══════════════════════════════════
+    # ════════════════ 链上变化 控制 ══════════════════════════════════
     def _cs_log(self, msg):
         def _do():
             self.cs_log.configure(state="normal")
