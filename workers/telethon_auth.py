@@ -102,6 +102,10 @@ def login_telethon(purpose, log_callback=None):
             log_callback(msg)
 
     api_id, api_hash, session = db.get_tg_credentials(purpose)
+    if not api_id or not api_hash:
+        log(f"❌ 未配置 Telegram API（{purpose}）。请到「⚙️ 设置」→「TG 账号凭证」填入 api_id / api_hash")
+        log("   申请地址：https://my.telegram.org → API development tools")
+        return None
     client = TelegramClient(session, api_id, api_hash)
 
     async def _login():

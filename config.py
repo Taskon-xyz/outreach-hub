@@ -16,9 +16,11 @@ else:
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
-# Telegram API
-TG_API_ID   = 33174525
-TG_API_HASH = "014f07ac24479b27f4ede2645067effe"
+# Telegram API（用户必须在「⚙️ 设置」标签页填自己的 api_id / api_hash
+# https://my.telegram.org → API development tools）
+# 这里只是兜底默认值；真实凭证存在 data/outreach.db 的 settings 表里
+TG_API_ID   = 0
+TG_API_HASH = ""
 TG_SESSION  = os.path.join(DATA_DIR, "tg_session")
 
 # tgleft 默认参数

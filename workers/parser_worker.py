@@ -39,6 +39,10 @@ class ParserWorker(BaseWorker):
         self.log(f"共 {total} 个 TG 群待解析")
 
         api_id, api_hash, session = db.get_tg_credentials("parser")
+        if not api_id or not api_hash:
+            self.log("❌ 未配置 Telegram API（parser）。请到「⚙️ 设置」→「TG 账号凭证」填入 api_id / api_hash")
+            self.log("   申请地址：https://my.telegram.org → API development tools")
+            return
         self.log(f"使用账号 API_ID={api_id}，session={session}")
         client = TelegramClient(session, api_id, api_hash)
         from workers.telethon_auth import async_start_client
