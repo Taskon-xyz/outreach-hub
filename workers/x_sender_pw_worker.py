@@ -1,7 +1,6 @@
 """
-X (Twitter) Sender Worker — Playwright 浏览器自动化（macOS）
-通过 Playwright 控制 Chromium 浏览器发送 Twitter DM。
-使用 persistent context 保存登录态，首次登录后无需重复登录。
+X (Twitter) Sender Worker — 通过 CDP 连接 start_chrome_cdp.sh 启动的真实
+Chrome，自动化发送 DM。登录态/cookies/历史都在用户启动的 Chrome 里。
 """
 import asyncio
 import random
@@ -11,12 +10,8 @@ import time
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
-import config
 from workers.base_worker import BaseWorker
-from workers.browser_stealth import (
-    STEALTH_ARGS, IGNORE_DEFAULT_ARGS, STEALTH_INIT_SCRIPT,
-    CONTEXT_KWARGS, EXTRA_HTTP_HEADERS,
-)
+from workers.browser_stealth import STEALTH_INIT_SCRIPT, EXTRA_HTTP_HEADERS
 
 # ── 选择器（基于 Twitter DM 页面实际结构）───────────────────────────────────
 DM_URL = "https://x.com/i/chat"
@@ -32,12 +27,6 @@ SEL_DM_TEXTAREA = "xpath=//*[@id='dm-main-container']//form//textarea"
 
 # 发送按钮
 SEL_SEND_BTN = "xpath=//*[@id='dm-main-container']//form//button"
-
-
-def _has_saved_session(pw_dir: str) -> bool:
-    """检查 persistent context 目录里是否有已保存的 Chrome 登录态（Cookies 文件）。"""
-    cookies_path = os.path.join(pw_dir, "Default", "Cookies")
-    return os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 4096
 
 
 class XSenderPWWorker(BaseWorker):
@@ -79,9 +68,8 @@ class XSenderPWWorker(BaseWorker):
             self.log("消息内容为空，请先在「文案」页配置激活文案")
             return
 
-        browser_type = getattr(config, "TWITTER_BROWSER", "chrome")
         async with async_playwright() as p:
-            page, context, need_close = await self._launch_browser(p, browser_type)
+            page, context, need_close = await self._launch_browser(p)
             if page is None:
                 return
 
@@ -91,76 +79,53 @@ class XSenderPWWorker(BaseWorker):
                 if need_close:
                     await context.close()
 
-    async def _launch_browser(self, p, browser_type):
+    async def _launch_browser(self, p):
         """
-        启动浏览器，返回 (page, context, need_close)。
-
-        优先级：
-          1. CDP（已运行 start_chrome_cdp.sh 的真实 Chrome，零检测风险）
-          2. Persistent context（仅在已有保存的登录态时才用，不要求用户在 Playwright Chrome 内登录）
-             → 如果没有保存的 session，直接报错，引导用户用 CDP 流程
+        连接 start_chrome_cdp.sh 启动的真实 Chrome（CDP 模式，端口 9222）。
+        失败时不再 fallback 启动 Playwright 自带 Chromium —— 那条路径用的是
+        独立的 data/twitter_pw_session/，与同事在 CDP Chrome 里的登录态完全
+        无关，弹出来必然是空白页，徒增困惑。
         """
-        # ── 模式 1：CDP ──────────────────────────────────────────────────────
-        try:
-            self.log("[浏览器] 尝试连接 Chrome CDP（端口 9222）...")
-            browser = await p.chromium.connect_over_cdp("http://localhost:9222")
-            context = browser.contexts[0] if browser.contexts else await browser.new_context()
-            # 注入 stealth：对后续所有新页面生效
+        last_err = None
+        for attempt in range(1, 4):
             try:
-                await context.add_init_script(STEALTH_INIT_SCRIPT)
-            except Exception:
-                pass
-            try:
-                await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
-            except Exception:
-                pass
-            page = context.pages[0] if context.pages else await context.new_page()
-            # 立即在当前页执行 stealth（覆盖已加载的页面）
-            try:
-                await page.evaluate(STEALTH_INIT_SCRIPT)
-            except Exception:
-                pass
-            await page.bring_to_front()
-            self.log("[浏览器] 已连接（CDP 模式）✓")
-            return page, context, False
-        except Exception as e:
-            self.log(f"[浏览器] CDP 未就绪（{str(e)[:50]}）")
+                self.log(f"[浏览器] 连接 Chrome CDP（端口 9222），尝试 {attempt}/3...")
+                browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+                context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                try:
+                    await context.add_init_script(STEALTH_INIT_SCRIPT)
+                except Exception:
+                    pass
+                try:
+                    await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
+                except Exception:
+                    pass
+                page = context.pages[0] if context.pages else await context.new_page()
+                try:
+                    await page.evaluate(STEALTH_INIT_SCRIPT)
+                except Exception:
+                    pass
+                await page.bring_to_front()
+                self.log("[浏览器] 已连接（CDP 模式）✓")
+                return page, context, False
+            except Exception as e:
+                last_err = e
+                if attempt < 3:
+                    await asyncio.sleep(1)
 
-        # ── 模式 2：Persistent context（仅有保存 session 时使用）────────────
-        session_ok = _has_saved_session(config.TWITTER_PW_DIR)
-        if not session_ok:
-            self.log("─" * 50)
-            self.log("❌  未找到保存的 X 登录态，且 CDP Chrome 未运行。")
-            self.log("")
-            self.log("请按以下步骤操作：")
-            self.log("  1. 在终端运行：./scripts/start_chrome_cdp.sh")
-            self.log("  2. 在弹出的 Chrome 窗口中手动登录 X")
-            self.log("  3. 回到本程序，重新点「▶ 开始发送」")
-            self.log("")
-            self.log("登录成功后，下次无需再次登录（会话已持久化）。")
-            self.log("─" * 50)
-            return None, None, False
-
-        try:
-            self.log("[浏览器] 使用已保存的 session 启动 persistent context...")
-            os.makedirs(config.TWITTER_PW_DIR, exist_ok=True)
-            context = await p.chromium.launch_persistent_context(
-                config.TWITTER_PW_DIR,
-                headless=False,
-                channel="chrome",
-                args=STEALTH_ARGS,
-                ignore_default_args=IGNORE_DEFAULT_ARGS,
-                **CONTEXT_KWARGS,
-            )
-            await context.add_init_script(STEALTH_INIT_SCRIPT)
-            await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
-            page = context.pages[0] if context.pages else await context.new_page()
-            self.log("[浏览器] Persistent context 已启动 ✓")
-            return page, context, True
-        except Exception as e:
-            self.log(f"[浏览器] 启动失败（{str(e)[:60]}）")
-            self.log("请确保已安装 Google Chrome，或使用 CDP 模式（start_chrome_cdp.sh）")
-            return None, None, False
+        self.log("─" * 50)
+        self.log(f"❌  连接 Chrome CDP 失败：{str(last_err)[:80]}")
+        self.log("")
+        self.log("常见原因：")
+        self.log("  • CDP Chrome 未启动 / 已退出（窗口被误关）")
+        self.log("  • 9222 端口被占用")
+        self.log("")
+        self.log("修复步骤：")
+        self.log("  1. 终端运行：./scripts/start_chrome_cdp.sh --system")
+        self.log("  2. 弹出 Chrome 后确认 x.com 已登录")
+        self.log("  3. 回到本程序，重新点「▶ 开始发送」")
+        self.log("─" * 50)
+        return None, None, False
 
     async def _send_loop(self, page):
         """主发送循环"""

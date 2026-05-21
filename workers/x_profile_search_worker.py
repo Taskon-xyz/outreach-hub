@@ -25,12 +25,8 @@ import urllib.parse
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
-import config
 from workers.base_worker import BaseWorker
-from workers.browser_stealth import (
-    STEALTH_ARGS, IGNORE_DEFAULT_ARGS, STEALTH_INIT_SCRIPT,
-    CONTEXT_KWARGS, EXTRA_HTTP_HEADERS,
-)
+from workers.browser_stealth import STEALTH_INIT_SCRIPT, EXTRA_HTTP_HEADERS
 
 # ── 角色关键词 ────────────────────────────────────────────────────────────────
 ROLE_KEYWORDS = {
@@ -69,11 +65,6 @@ RATE_LIMIT_SIGNALS = [
     "too many requests",
     "/error",
 ]
-
-
-def _has_saved_session(pw_dir: str) -> bool:
-    cookies_path = os.path.join(pw_dir, "Default", "Cookies")
-    return os.path.exists(cookies_path) and os.path.getsize(cookies_path) > 4096
 
 
 def _detect_role(text: str) -> str | None:
@@ -148,56 +139,51 @@ class XProfileSearchWorker(BaseWorker):
                     await context.close()
 
     async def _launch_browser(self, p):
-        # ── CDP 优先 ──────────────────────────────────────────────────────────
-        try:
-            self.log("[浏览器] 尝试连接 Chrome CDP（端口 9222）...")
-            browser = await p.chromium.connect_over_cdp("http://localhost:9222")
-            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+        """
+        只连接 start_chrome_cdp.sh 启动的 CDP Chrome。CDP 失败不再 fallback
+        到 launch_persistent_context — 那条路径用的是独立的会话目录，弹出
+        来跟同事的登录态完全无关，徒增空白浏览器困惑。
+        """
+        last_err = None
+        for attempt in range(1, 4):
             try:
-                await context.add_init_script(STEALTH_INIT_SCRIPT)
-            except Exception:
-                pass
-            try:
-                await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
-            except Exception:
-                pass
-            page = context.pages[0] if context.pages else await context.new_page()
-            try:
-                await page.evaluate(STEALTH_INIT_SCRIPT)
-            except Exception:
-                pass
-            await page.bring_to_front()
-            self.log("[浏览器] 已连接（CDP 模式）✓")
-            return page, context, False
-        except Exception as e:
-            self.log(f"[浏览器] CDP 未就绪（{str(e)[:50]}）")
+                self.log(f"[浏览器] 连接 Chrome CDP（端口 9222），尝试 {attempt}/3...")
+                browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+                context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                try:
+                    await context.add_init_script(STEALTH_INIT_SCRIPT)
+                except Exception:
+                    pass
+                try:
+                    await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
+                except Exception:
+                    pass
+                page = context.pages[0] if context.pages else await context.new_page()
+                try:
+                    await page.evaluate(STEALTH_INIT_SCRIPT)
+                except Exception:
+                    pass
+                await page.bring_to_front()
+                self.log("[浏览器] 已连接（CDP 模式）✓")
+                return page, context, False
+            except Exception as e:
+                last_err = e
+                if attempt < 3:
+                    await asyncio.sleep(1)
 
-        # ── Persistent context（仅有保存 session 时）─────────────────────────
-        if not _has_saved_session(config.TWITTER_PW_DIR):
-            self.log("─" * 50)
-            self.log("❌  未找到保存的 X 登录态，且 CDP Chrome 未运行。")
-            self.log("请先运行 ./scripts/start_chrome_cdp.sh，在弹出 Chrome 中登录 X，再重试。")
-            self.log("─" * 50)
-            return None, None, False
-
-        try:
-            self.log("[浏览器] 使用已保存的 session 启动 persistent context...")
-            os.makedirs(config.TWITTER_PW_DIR, exist_ok=True)
-            context = await p.chromium.launch_persistent_context(
-                config.TWITTER_PW_DIR,
-                headless=False, channel="chrome",
-                args=STEALTH_ARGS,
-                ignore_default_args=IGNORE_DEFAULT_ARGS,
-                **CONTEXT_KWARGS,
-            )
-            await context.add_init_script(STEALTH_INIT_SCRIPT)
-            await context.set_extra_http_headers(EXTRA_HTTP_HEADERS)
-            page = context.pages[0] if context.pages else await context.new_page()
-            self.log("[浏览器] Persistent context 已启动 ✓")
-            return page, context, True
-        except Exception as e:
-            self.log(f"[浏览器] 启动失败（{str(e)[:60]}）")
-            return None, None, False
+        self.log("─" * 50)
+        self.log(f"❌  连接 Chrome CDP 失败：{str(last_err)[:80]}")
+        self.log("")
+        self.log("常见原因：")
+        self.log("  • CDP Chrome 未启动 / 已退出（窗口被误关）")
+        self.log("  • 9222 端口被占用")
+        self.log("")
+        self.log("修复步骤：")
+        self.log("  1. 终端运行：./scripts/start_chrome_cdp.sh --system")
+        self.log("  2. 弹出 Chrome 后确认 x.com 已登录")
+        self.log("  3. 回到本程序，重新点「▶ 开始搜索」")
+        self.log("─" * 50)
+        return None, None, False
 
     # ── 主循环 ────────────────────────────────────────────────────────────────
 
