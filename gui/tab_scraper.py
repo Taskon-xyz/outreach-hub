@@ -119,6 +119,8 @@ SOURCES = [
         "name": "X 关键人搜索",
         "sub":  "CEO/CMO/Growth → x_contacts",
         "panel": "_build_xps_panel",
+    },
+    {
         "id": "import",
         "name": "文件导入",
         "sub":  "Excel/CSV 批量导入项目",
