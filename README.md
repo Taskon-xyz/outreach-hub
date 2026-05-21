@@ -78,14 +78,30 @@ uv run python web_server.py
 3. 等待浏览器打开 DM 页面后，点击「已登录就绪」
 4. 自动逐个发送 DM
 
-**首次登录 X 卡循环？** X 把脚本启动的 Chrome 视作新设备，可能直接打回登录页。
-解决方法：完全退出日常 Chrome（⌘Q，不只是关窗口），然后用 `--system` 启动：
+#### 启动模式
+
+| 命令 | 说明 |
+|------|------|
+| `./scripts/start_chrome_cdp.sh` | **默认**。使用项目本地隔离 profile（`data/chrome_cdp_session/`），与日常 Chrome 互不影响 |
+| `./scripts/start_chrome_cdp.sh --system` | **复用日常 Chrome profile**。X / Twitter 看到的是同一台老设备，不触发风控 |
+| `./scripts/start_chrome_cdp.sh --help` | 查看用法 |
+
+#### 何时需要 `--system`？
+
+X 把脚本启动的「干净 Chrome」视作新设备，首次登录时常常**输完密码又被打回登录页循环**（典型反 bot 软封）。这时改用 `--system`：
 
 ```bash
+# 1. 完全退出日常 Chrome（⌘Q，不只是关窗口；user-data-dir 不能并发占用）
+# 2. 启动 outreach-hub
 ./scripts/start_chrome_cdp.sh --system
 ```
 
-这会复用日常 Chrome 的 profile（登录态、历史、cookies 都在），X 看到的是同一台老设备，不会风控。注意整个 outreach-hub 运行期间不能再启动日常 Chrome。
+`--system` 会让 Chrome 直接复用 `~/Library/Application Support/Google/Chrome` 下的日常 profile（登录态、cookies、历史记录都在），X 把你视作老用户，不再循环。
+
+⚠️ **使用注意**：
+- 启动前必须**完全退出**日常 Chrome，脚本会自动检测并提醒
+- outreach-hub 运行期间不要再启动日常 Chrome（会冲突）
+- 退出 outreach-hub 后日常 Chrome 即可恢复正常使用
 
 ### Web UI
 
@@ -126,6 +142,6 @@ outreach-hub/
   scripts/
     install.sh             # 一键安装（给新同事用）
     install_browsers.sh    # 环境准备（install.sh 内部调用）
-    start_chrome_cdp.sh    # 日常启动（Chrome + GUI）
+    start_chrome_cdp.sh    # 日常启动（Chrome + GUI），加 --system 复用日常 profile
   data/                # 数据库、session（自动创建，不入版本控制）
 ```
