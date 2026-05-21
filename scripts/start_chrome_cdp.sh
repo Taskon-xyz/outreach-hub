@@ -22,21 +22,27 @@ SYSTEM_PROFILE="$HOME/Library/Application Support/Google/Chrome"
 # -- 0. 解析参数 --------------------------------------------------------------
 USE_SYSTEM=0
 REFRESH=0
-for arg in "$@"; do
-    case "$arg" in
-        --system|-s) USE_SYSTEM=1 ;;
-        --refresh) REFRESH=1 ;;
+EXPLICIT_PROFILE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --system|-s) USE_SYSTEM=1; shift ;;
+        --refresh) REFRESH=1; shift ;;
+        --profile)
+            EXPLICIT_PROFILE="$2"; shift 2 ;;
         --help|-h)
             cat <<EOF
-用法：$0 [--system|-s] [--refresh]
+用法：$0 [--system|-s] [--refresh] [--profile NAME]
 
-  默认       项目本地隔离 profile，全新登录（首次会被 X 风控的话改用 --system）
-  --system   首次启动从日常 Chrome 拷贝 cookies / Local State 到隔离 profile，
-             保留 CDP 能用 + X 不当新设备。Chrome 必须已完全退出（⌘Q）
-  --refresh  强制重新拷贝（即使隔离 profile 里已有 cookies）
+  默认             项目本地隔离 profile，全新登录（首次会被 X 风控的话改用 --system）
+  --system         首次启动从日常 Chrome 拷贝 cookies / Local State 到隔离 profile
+                   自动扫描所有 Chrome profile，挑含 X auth_token 的那个
+  --refresh        强制重新拷贝（即使隔离 profile 里已有 cookies）
+  --profile NAME   显式指定源 profile（如 "Default" / "Profile 1"），跳过自动扫描
+
+  Chrome 必须完全退出（⌘Q），SQLite 才能读到一致状态
 EOF
             exit 0 ;;
-        *) echo "未知参数：$arg（用 --help 查看）"; exit 1 ;;
+        *) echo "未知参数：$1（用 --help 查看）"; exit 1 ;;
     esac
 done
 
@@ -55,8 +61,8 @@ fi
 
 # -- 2. --system 模式：从日常 Chrome 拷贝认证文件 ----------------------------
 if [ $USE_SYSTEM -eq 1 ]; then
-    if [ ! -d "$SYSTEM_PROFILE/Default" ]; then
-        echo "❌  未找到日常 Chrome profile：$SYSTEM_PROFILE"
+    if [ ! -d "$SYSTEM_PROFILE" ]; then
+        echo "❌  未找到日常 Chrome profile 目录：$SYSTEM_PROFILE"
         echo "    --system 模式不可用，请先用 Chrome 登录一次 X，再重试"
         exit 1
     fi
@@ -81,27 +87,84 @@ if [ $USE_SYSTEM -eq 1 ]; then
     fi
 
     if [ $NEED_COPY -eq 1 ]; then
+        # 选择源 profile：--profile 指定 / 自动扫描 auth_token
+        SELECTED_PROFILE=""
+        if [ -n "$EXPLICIT_PROFILE" ]; then
+            if [ ! -d "$SYSTEM_PROFILE/$EXPLICIT_PROFILE" ]; then
+                echo "❌  指定的 profile 不存在：$SYSTEM_PROFILE/$EXPLICIT_PROFILE"
+                exit 1
+            fi
+            SELECTED_PROFILE="$EXPLICIT_PROFILE"
+            echo "  使用指定 profile：$SELECTED_PROFILE"
+        else
+            echo "  扫描所有 Chrome profile，查找含 X auth_token 的那个..."
+            FOUND_PROFILES=()
+            # 遍历 Default + Profile N
+            for profile_dir in "$SYSTEM_PROFILE/Default" "$SYSTEM_PROFILE"/Profile\ *; do
+                [ -d "$profile_dir" ] || continue
+                pname=$(basename "$profile_dir")
+                # cookies DB 优先 Network/Cookies（Chrome 96+），fallback 老位置
+                cookie_db=""
+                if [ -f "$profile_dir/Network/Cookies" ]; then
+                    cookie_db="$profile_dir/Network/Cookies"
+                elif [ -f "$profile_dir/Cookies" ]; then
+                    cookie_db="$profile_dir/Cookies"
+                fi
+                [ -n "$cookie_db" ] || continue
+                # 拷一份 DB 再查（避免临时锁影响）
+                tmp_db=$(mktemp)
+                cp -f "$cookie_db" "$tmp_db" 2>/dev/null || { rm -f "$tmp_db"; continue; }
+                has_auth=$(sqlite3 "$tmp_db" \
+                    "SELECT COUNT(*) FROM cookies WHERE name='auth_token' AND host_key LIKE '%.x.com' OR host_key LIKE '%.twitter.com';" \
+                    2>/dev/null || echo 0)
+                rm -f "$tmp_db"
+                if [ "${has_auth:-0}" != "0" ]; then
+                    FOUND_PROFILES+=("$pname")
+                    echo "    ✓ $pname (含 X auth_token)"
+                fi
+            done
+            if [ ${#FOUND_PROFILES[@]} -eq 0 ]; then
+                echo "❌  在所有 Chrome profile 中都没找到 X auth_token。"
+                echo "    请先打开日常 Chrome 登录 https://x.com，⌘Q 退出后重试。"
+                exit 1
+            elif [ ${#FOUND_PROFILES[@]} -gt 1 ]; then
+                echo "❌  多个 profile 含 X 登录态：${FOUND_PROFILES[*]}"
+                echo "    请用 --profile NAME 显式指定，例如："
+                echo "      $0 --system --refresh --profile \"${FOUND_PROFILES[0]}\""
+                exit 1
+            fi
+            SELECTED_PROFILE="${FOUND_PROFILES[0]}"
+            echo "  自动选中：$SELECTED_PROFILE"
+        fi
+
         # Chrome 用 OSCrypt 加密 cookies，Local State 存了加密元数据，
         # 主密钥在 macOS Keychain 里（per-app，不需要拷贝）。
-        # Cookies 在 Chrome 96+ 移到了 Default/Network/Cookies，老位置 Default/Cookies 兼容
+        # 源 profile 文件名可能含空格（"Profile 1"），所以用变量包裹路径。
+        # 目标永远是隔离 profile 的 Default/，让 Chrome 当默认 profile 用。
         mkdir -p "$USER_DATA/Default/Network"
         copied=0
+        # Local State 在 profile 父目录（全局），不在 profile 子目录里
+        if [ -f "$SYSTEM_PROFILE/Local State" ]; then
+            cp -f "$SYSTEM_PROFILE/Local State" "$USER_DATA/Local State"
+            copied=$((copied + 1))
+        fi
         for src_rel in \
-            "Local State" \
-            "Default/Cookies" \
-            "Default/Cookies-journal" \
-            "Default/Network/Cookies" \
-            "Default/Network/Cookies-journal" \
-            "Default/Preferences" \
-            "Default/Login Data" \
-            "Default/Login Data-journal"
+            "Cookies" \
+            "Cookies-journal" \
+            "Network/Cookies" \
+            "Network/Cookies-journal" \
+            "Preferences" \
+            "Login Data" \
+            "Login Data-journal"
         do
-            if [ -f "$SYSTEM_PROFILE/$src_rel" ]; then
-                cp -f "$SYSTEM_PROFILE/$src_rel" "$USER_DATA/$src_rel"
+            src_path="$SYSTEM_PROFILE/$SELECTED_PROFILE/$src_rel"
+            dst_path="$USER_DATA/Default/$src_rel"
+            if [ -f "$src_path" ]; then
+                cp -f "$src_path" "$dst_path"
                 copied=$((copied + 1))
             fi
         done
-        echo "  ✓ 已拷贝 $copied 个文件到 $USER_DATA"
+        echo "  ✓ 已从「$SELECTED_PROFILE」拷贝 $copied 个文件到 $USER_DATA/Default/"
     fi
 
     # 清理残留 SingletonLock
