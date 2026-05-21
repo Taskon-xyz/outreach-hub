@@ -60,6 +60,16 @@ cd outreach-hub
 uv run python web_server.py
 ```
 
+### 更新到最新版
+
+每次发新版后，在终端跑：
+
+```bash
+cd outreach-hub
+git pull
+uv sync    # 若依赖有更新，会自动安装；没更新则秒退
+```
+
 ## 使用
 
 ### 桌面 GUI
