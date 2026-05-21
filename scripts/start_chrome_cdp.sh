@@ -1,12 +1,46 @@
 #!/usr/bin/env bash
 # 一键启动：Chrome CDP + Python 应用
-# 只会杀掉占用 9222 端口的旧 CDP Chrome，不影响日常使用的 Chrome
+#
+# 默认：项目本地 profile（data/chrome_cdp_session/），与日常 Chrome 隔离
+# --system: 复用日常 Chrome profile（~/Library/Application Support/Google/Chrome）
+#           适合首次登录被 X 风控时使用，让 X 看到的是同一台老设备
+#
+# 用法：
+#   ./scripts/start_chrome_cdp.sh                # 默认隔离 profile
+#   ./scripts/start_chrome_cdp.sh --system       # 复用日常 Chrome profile
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PORT=9222
-# 持久化目录：放在项目 data/ 下，重启后 X 登录态保留，无需重复登录
-USER_DATA="$(cd "$(dirname "$0")/.." && pwd)/data/chrome_cdp_session"
+PROJECT_ROOT="$(pwd)"
+DEFAULT_USER_DATA="$PROJECT_ROOT/data/chrome_cdp_session"
+SYSTEM_USER_DATA="$HOME/Library/Application Support/Google/Chrome"
+
+# -- 0. 解析参数 --------------------------------------------------------------
+USE_SYSTEM=0
+for arg in "$@"; do
+    case "$arg" in
+        --system|-s) USE_SYSTEM=1 ;;
+        --help|-h)
+            echo "用法：$0 [--system|-s]"
+            echo "  默认：项目本地 profile，与日常 Chrome 隔离"
+            echo "  --system: 复用日常 Chrome profile（X 不会判定为新设备）"
+            exit 0 ;;
+        *) echo "未知参数：$arg（用 --help 查看）"; exit 1 ;;
+    esac
+done
+
+if [ $USE_SYSTEM -eq 1 ]; then
+    USER_DATA="$SYSTEM_USER_DATA"
+    MODE_DESC="日常 Chrome profile（复用登录态）"
+else
+    USER_DATA="$DEFAULT_USER_DATA"
+    MODE_DESC="项目本地隔离 profile"
+fi
+
+echo "模式：$MODE_DESC"
+echo "目录：$USER_DATA"
+echo ""
 
 # -- 1. 清理旧 CDP 进程 -------------------------------------------------------
 PIDS=$(lsof -ti :$PORT 2>/dev/null || true)
@@ -21,6 +55,25 @@ if [ -n "$PIDS" ]; then
     fi
 fi
 
+# -- 1b. --system 模式：检测日常 Chrome 是否在跑（user-data-dir 不能并发占用）--
+if [ $USE_SYSTEM -eq 1 ]; then
+    # 主进程名是 "Google Chrome"，Helper 进程会带后缀，用 pgrep -x 精确匹配主进程
+    if pgrep -x "Google Chrome" > /dev/null 2>&1; then
+        echo ""
+        echo "❌  检测到日常 Chrome 正在运行。"
+        echo "    --system 模式要求 Chrome 全部退出（user-data-dir 不可并发占用）。"
+        echo ""
+        echo "请：完全关闭 Chrome（⌘Q 退出，不只是关窗口），然后重新运行此脚本。"
+        echo ""
+        exit 1
+    fi
+    # 顺手检查 SingletonLock（异常退出留下的残留锁文件会阻止 Chrome 启动）
+    if [ -e "$USER_DATA/SingletonLock" ]; then
+        echo "清理残留的 SingletonLock..."
+        rm -f "$USER_DATA/SingletonLock" "$USER_DATA/SingletonCookie" "$USER_DATA/SingletonSocket"
+    fi
+fi
+
 # -- 2. 启动 Chrome CDP（后台）------------------------------------------------
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 if [ ! -f "$CHROME" ]; then
@@ -31,7 +84,8 @@ fi
 
 echo "启动 Chrome CDP (端口 $PORT)..."
 mkdir -p "$USER_DATA"
-LOG_FILE="$USER_DATA/chrome_debug.log"
+LOG_FILE="$PROJECT_ROOT/data/chrome_debug.log"
+mkdir -p "$(dirname "$LOG_FILE")"
 "$CHROME" \
     --remote-debugging-port=$PORT \
     --user-data-dir="$USER_DATA" \
@@ -46,11 +100,24 @@ LOG_FILE="$USER_DATA/chrome_debug.log"
 CHROME_PID=$!
 echo "Chrome CDP 已启动 (PID: $CHROME_PID)"
 echo ""
-echo "下一步："
-echo "  1. 在弹出的 Chrome 中打开 https://x.com 并登录"
-echo "  2. 登录成功后，回到 outreach-hub 程序"
-echo "  3. 点击「▶ 开始发送」或「▶ 开始搜索」，再点「已登录就绪」"
-echo "  ✓ 本次登录会保存在 data/chrome_cdp_session/，下次无需重新登录"
+
+if [ $USE_SYSTEM -eq 1 ]; then
+    echo "下一步："
+    echo "  ✓ 已复用日常 Chrome profile，X / Twitter 通常已是登录态"
+    echo "  1. 在弹出的 Chrome 中确认 https://x.com 已登录"
+    echo "  2. 回到 outreach-hub，点击「▶ 开始发送」或「▶ 开始搜索」，再点「已登录就绪」"
+    echo ""
+    echo "  ⚠️  本次运行期间不要再单独启动日常 Chrome（会冲突）"
+    echo "       outreach-hub 退出后再启动日常 Chrome"
+else
+    echo "下一步："
+    echo "  1. 在弹出的 Chrome 中打开 https://x.com 并登录"
+    echo "  2. 登录成功后，回到 outreach-hub 程序"
+    echo "  3. 点击「▶ 开始发送」或「▶ 开始搜索」，再点「已登录就绪」"
+    echo "  ✓ 本次登录会保存在 data/chrome_cdp_session/，下次无需重新登录"
+    echo ""
+    echo "  💡 若 X 登录卡循环回首页，改用 --system 复用日常 Chrome profile"
+fi
 echo ""
 
 # -- 3. 启动 Python 应用（前台）-----------------------------------------------

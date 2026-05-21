@@ -78,6 +78,15 @@ uv run python web_server.py
 3. 等待浏览器打开 DM 页面后，点击「已登录就绪」
 4. 自动逐个发送 DM
 
+**首次登录 X 卡循环？** X 把脚本启动的 Chrome 视作新设备，可能直接打回登录页。
+解决方法：完全退出日常 Chrome（⌘Q，不只是关窗口），然后用 `--system` 启动：
+
+```bash
+./scripts/start_chrome_cdp.sh --system
+```
+
+这会复用日常 Chrome 的 profile（登录态、历史、cookies 都在），X 看到的是同一台老设备，不会风控。注意整个 outreach-hub 运行期间不能再启动日常 Chrome。
+
 ### Web UI
 
 ```bash
