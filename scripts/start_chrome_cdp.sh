@@ -88,6 +88,7 @@ LOG_FILE="$PROJECT_ROOT/data/chrome_debug.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 "$CHROME" \
     --remote-debugging-port=$PORT \
+    --remote-debugging-address=127.0.0.1 \
     --user-data-dir="$USER_DATA" \
     --disable-blink-features=AutomationControlled \
     --exclude-switches=enable-automation \

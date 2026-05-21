@@ -148,7 +148,7 @@ class XProfileSearchWorker(BaseWorker):
         for attempt in range(1, 4):
             try:
                 self.log(f"[浏览器] 连接 Chrome CDP（端口 9222），尝试 {attempt}/3...")
-                browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+                browser = await p.chromium.connect_over_cdp("http://127.0.0.1:9222")
                 context = browser.contexts[0] if browser.contexts else await browser.new_context()
                 try:
                     await context.add_init_script(STEALTH_INIT_SCRIPT)
