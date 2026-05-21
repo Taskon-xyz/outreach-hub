@@ -82,8 +82,9 @@ uv run python web_server.py
 
 | 命令 | 说明 |
 |------|------|
-| `./scripts/start_chrome_cdp.sh` | **默认**。使用项目本地隔离 profile（`data/chrome_cdp_session/`），与日常 Chrome 互不影响 |
-| `./scripts/start_chrome_cdp.sh --system` | **复用日常 Chrome profile**。X / Twitter 看到的是同一台老设备，不触发风控 |
+| `./scripts/start_chrome_cdp.sh` | **默认**。隔离 profile（`data/chrome_cdp_session/`），全新登录 |
+| `./scripts/start_chrome_cdp.sh --system` | **从日常 Chrome 拷贝 cookies / 登录态到隔离 profile**，X 不会判定为新设备 |
+| `./scripts/start_chrome_cdp.sh --system --refresh` | 强制重新拷贝（日常 Chrome 改密码后用一次） |
 | `./scripts/start_chrome_cdp.sh --help` | 查看用法 |
 
 #### 何时需要 `--system`？
@@ -91,17 +92,19 @@ uv run python web_server.py
 X 把脚本启动的「干净 Chrome」视作新设备，首次登录时常常**输完密码又被打回登录页循环**（典型反 bot 软封）。这时改用 `--system`：
 
 ```bash
-# 1. 完全退出日常 Chrome（⌘Q，不只是关窗口；user-data-dir 不能并发占用）
+# 1. 完全退出日常 Chrome（⌘Q，不只是关窗口；脚本要读 cookies SQLite，被写锁会损坏）
 # 2. 启动 outreach-hub
 ./scripts/start_chrome_cdp.sh --system
 ```
 
-`--system` 会让 Chrome 直接复用 `~/Library/Application Support/Google/Chrome` 下的日常 profile（登录态、cookies、历史记录都在），X 把你视作老用户，不再循环。
+`--system` 首次启动会从 `~/Library/Application Support/Google/Chrome/Default/` 拷贝 cookies、Local State 等认证文件到隔离 profile，弹出的 Chrome 直接是登录态，X 把你视作老用户。
+
+> **为什么不直接复用日常 profile？** Chrome 136+ 出于安全考虑，禁止在默认 profile 上开 `--remote-debugging-port`（防恶意软件偷登录态）。所以脚本必须用独立 profile，再把日常 Chrome 的认证文件搬过去。
 
 ⚠️ **使用注意**：
-- 启动前必须**完全退出**日常 Chrome，脚本会自动检测并提醒
-- outreach-hub 运行期间不要再启动日常 Chrome（会冲突）
-- 退出 outreach-hub 后日常 Chrome 即可恢复正常使用
+- 拷贝前必须**完全退出**日常 Chrome（⌘Q，不只是关窗口），否则 cookies SQLite 还被锁住
+- 拷贝只在隔离 profile 首次为空时进行，之后启动会复用上次的状态；日常 Chrome 改密码或换号后跑 `--system --refresh` 重刷一次
+- 拷贝完成后，日常 Chrome 可以随便开，不影响 outreach-hub 这边的隔离 profile
 
 ### Web UI
 

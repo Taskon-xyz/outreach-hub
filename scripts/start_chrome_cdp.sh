@@ -1,46 +1,44 @@
 #!/usr/bin/env bash
 # 一键启动：Chrome CDP + Python 应用
 #
-# 默认：项目本地 profile（data/chrome_cdp_session/），与日常 Chrome 隔离
-# --system: 复用日常 Chrome profile（~/Library/Application Support/Google/Chrome）
-#           适合首次登录被 X 风控时使用，让 X 看到的是同一台老设备
+# Chrome 136+ 安全限制：当 --user-data-dir 指向默认 profile（用户的日常
+# Chrome）时，--remote-debugging-port 被静默禁用。所以本脚本始终用项目
+# 本地的隔离 profile（data/chrome_cdp_session/），CDP 才能开。
 #
-# 用法：
-#   ./scripts/start_chrome_cdp.sh                # 默认隔离 profile
-#   ./scripts/start_chrome_cdp.sh --system       # 复用日常 Chrome profile
+# 模式：
+#   默认           -- 全新隔离 profile，需在弹出的 Chrome 里手动登录 X
+#   --system / -s  -- 首次启动时从日常 Chrome 拷贝 cookies/Local State，
+#                     保留隔离 profile（CDP 可用）+ X 登录态（不被风控）
+#   --refresh      -- 配合 --system 使用，强制重新拷贝（覆盖隔离 profile
+#                     里的 cookies）。日常 Chrome 改密码后需要刷一次
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PORT=9222
 PROJECT_ROOT="$(pwd)"
-DEFAULT_USER_DATA="$PROJECT_ROOT/data/chrome_cdp_session"
-SYSTEM_USER_DATA="$HOME/Library/Application Support/Google/Chrome"
+USER_DATA="$PROJECT_ROOT/data/chrome_cdp_session"
+SYSTEM_PROFILE="$HOME/Library/Application Support/Google/Chrome"
 
 # -- 0. 解析参数 --------------------------------------------------------------
 USE_SYSTEM=0
+REFRESH=0
 for arg in "$@"; do
     case "$arg" in
         --system|-s) USE_SYSTEM=1 ;;
+        --refresh) REFRESH=1 ;;
         --help|-h)
-            echo "用法：$0 [--system|-s]"
-            echo "  默认：项目本地 profile，与日常 Chrome 隔离"
-            echo "  --system: 复用日常 Chrome profile（X 不会判定为新设备）"
+            cat <<EOF
+用法：$0 [--system|-s] [--refresh]
+
+  默认       项目本地隔离 profile，全新登录（首次会被 X 风控的话改用 --system）
+  --system   首次启动从日常 Chrome 拷贝 cookies / Local State 到隔离 profile，
+             保留 CDP 能用 + X 不当新设备。Chrome 必须已完全退出（⌘Q）
+  --refresh  强制重新拷贝（即使隔离 profile 里已有 cookies）
+EOF
             exit 0 ;;
         *) echo "未知参数：$arg（用 --help 查看）"; exit 1 ;;
     esac
 done
-
-if [ $USE_SYSTEM -eq 1 ]; then
-    USER_DATA="$SYSTEM_USER_DATA"
-    MODE_DESC="日常 Chrome profile（复用登录态）"
-else
-    USER_DATA="$DEFAULT_USER_DATA"
-    MODE_DESC="项目本地隔离 profile"
-fi
-
-echo "模式：$MODE_DESC"
-echo "目录：$USER_DATA"
-echo ""
 
 # -- 1. 清理旧 CDP 进程 -------------------------------------------------------
 PIDS=$(lsof -ti :$PORT 2>/dev/null || true)
@@ -55,26 +53,64 @@ if [ -n "$PIDS" ]; then
     fi
 fi
 
-# -- 1b. --system 模式：检测日常 Chrome 是否在跑（user-data-dir 不能并发占用）--
+# -- 2. --system 模式：从日常 Chrome 拷贝认证文件 ----------------------------
 if [ $USE_SYSTEM -eq 1 ]; then
-    # 主进程名是 "Google Chrome"，Helper 进程会带后缀，用 pgrep -x 精确匹配主进程
-    if pgrep -x "Google Chrome" > /dev/null 2>&1; then
-        echo ""
-        echo "❌  检测到日常 Chrome 正在运行。"
-        echo "    --system 模式要求 Chrome 全部退出（user-data-dir 不可并发占用）。"
-        echo ""
-        echo "请：完全关闭 Chrome（⌘Q 退出，不只是关窗口），然后重新运行此脚本。"
-        echo ""
+    if [ ! -d "$SYSTEM_PROFILE/Default" ]; then
+        echo "❌  未找到日常 Chrome profile：$SYSTEM_PROFILE"
+        echo "    --system 模式不可用，请先用 Chrome 登录一次 X，再重试"
         exit 1
     fi
-    # 顺手检查 SingletonLock（异常退出留下的残留锁文件会阻止 Chrome 启动）
+
+    # 日常 Chrome 在跑会持有 cookies SQLite 的写锁，拷贝出来是损坏的
+    if pgrep -x "Google Chrome" > /dev/null 2>&1; then
+        echo "❌  检测到日常 Chrome 正在运行。"
+        echo "    --system 拷贝认证文件前必须完全关闭日常 Chrome（⌘Q，不只是关窗口）。"
+        exit 1
+    fi
+
+    # 判断是否需要拷贝：首次启动 / 用户主动 --refresh
+    NEED_COPY=0
+    if [ $REFRESH -eq 1 ]; then
+        NEED_COPY=1
+        echo "[--refresh] 强制重新拷贝 cookies..."
+    elif [ ! -f "$USER_DATA/Local State" ]; then
+        NEED_COPY=1
+        echo "[--system] 首次启动，从日常 Chrome 拷贝登录态..."
+    else
+        echo "[--system] 隔离 profile 已有 Local State，跳过拷贝（用 --refresh 强制刷新）"
+    fi
+
+    if [ $NEED_COPY -eq 1 ]; then
+        # Chrome 用 OSCrypt 加密 cookies，Local State 存了加密元数据，
+        # 主密钥在 macOS Keychain 里（per-app，不需要拷贝）。
+        # Cookies 在 Chrome 96+ 移到了 Default/Network/Cookies，老位置 Default/Cookies 兼容
+        mkdir -p "$USER_DATA/Default/Network"
+        copied=0
+        for src_rel in \
+            "Local State" \
+            "Default/Cookies" \
+            "Default/Cookies-journal" \
+            "Default/Network/Cookies" \
+            "Default/Network/Cookies-journal" \
+            "Default/Preferences" \
+            "Default/Login Data" \
+            "Default/Login Data-journal"
+        do
+            if [ -f "$SYSTEM_PROFILE/$src_rel" ]; then
+                cp -f "$SYSTEM_PROFILE/$src_rel" "$USER_DATA/$src_rel"
+                copied=$((copied + 1))
+            fi
+        done
+        echo "  ✓ 已拷贝 $copied 个文件到 $USER_DATA"
+    fi
+
+    # 清理残留 SingletonLock
     if [ -e "$USER_DATA/SingletonLock" ]; then
-        echo "清理残留的 SingletonLock..."
         rm -f "$USER_DATA/SingletonLock" "$USER_DATA/SingletonCookie" "$USER_DATA/SingletonSocket"
     fi
 fi
 
-# -- 2. 启动 Chrome CDP（后台）------------------------------------------------
+# -- 3. 启动 Chrome CDP（后台）------------------------------------------------
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 if [ ! -f "$CHROME" ]; then
     echo "未找到 Chrome: $CHROME"
@@ -115,11 +151,6 @@ for i in $(seq 1 30); do
         echo "─────────────────────────────"
         tail -20 "$LOG_FILE" 2>/dev/null || echo "(无日志)"
         echo "─────────────────────────────"
-        echo ""
-        echo "常见原因："
-        echo "  • --system 模式下日常 Chrome 还在跑（user-data-dir 冲突）"
-        echo "  • user-data-dir 残留 SingletonLock"
-        echo "  • Chrome 路径不对"
         exit 1
     fi
     sleep 0.5
@@ -128,8 +159,12 @@ done
 if [ $CDP_READY -ne 1 ]; then
     echo ""
     echo "❌  Chrome 进程跑着，但 15 秒内 CDP 端口 $PORT 仍未就绪。"
-    echo "    可能是 Chrome 卡在某个对话框（如「恢复上次会话？」「设为默认浏览器？」）。"
-    echo "    请手动点掉，然后 Ctrl-C 后重新运行此脚本。"
+    if grep -q "non-default data directory" "$LOG_FILE" 2>/dev/null; then
+        echo "    日志显示 Chrome 拒绝在默认 profile 上开 CDP（Chrome 136+ 安全限制）。"
+        echo "    本脚本不该走到这条分支 — 请把脚本和日志贴给开发者。"
+    else
+        echo "    可能 Chrome 卡在某个对话框（如「恢复上次会话？」），请手动点掉重试。"
+    fi
     exit 1
 fi
 
@@ -138,12 +173,11 @@ echo ""
 
 if [ $USE_SYSTEM -eq 1 ]; then
     echo "下一步："
-    echo "  ✓ 已复用日常 Chrome profile，X / Twitter 通常已是登录态"
-    echo "  1. 在弹出的 Chrome 中确认 https://x.com 已登录"
+    echo "  ✓ 已从日常 Chrome 拷贝登录态到隔离 profile"
+    echo "  1. 在弹出的 Chrome 中确认 https://x.com 已登录（应该已经是登录态）"
     echo "  2. 回到 outreach-hub，点击「▶ 开始发送」或「▶ 开始搜索」，再点「已登录就绪」"
     echo ""
-    echo "  ⚠️  本次运行期间不要再单独启动日常 Chrome（会冲突）"
-    echo "       outreach-hub 退出后再启动日常 Chrome"
+    echo "  💡 日常 Chrome 改密码或登录新账号后，运行 --system --refresh 重新同步"
 else
     echo "下一步："
     echo "  1. 在弹出的 Chrome 中打开 https://x.com 并登录"
@@ -151,11 +185,11 @@ else
     echo "  3. 点击「▶ 开始发送」或「▶ 开始搜索」，再点「已登录就绪」"
     echo "  ✓ 本次登录会保存在 data/chrome_cdp_session/，下次无需重新登录"
     echo ""
-    echo "  💡 若 X 登录卡循环回首页，改用 --system 复用日常 Chrome profile"
+    echo "  💡 若 X 登录卡循环回首页，改用 --system 从日常 Chrome 拷贝登录态"
 fi
 echo ""
 
-# -- 3. 启动 Python 应用（前台）-----------------------------------------------
+# -- 4. 启动 Python 应用（前台）-----------------------------------------------
 echo ""
 echo "启动 Python 应用..."
 uv run python main.py
