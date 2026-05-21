@@ -99,7 +99,41 @@ mkdir -p "$(dirname "$LOG_FILE")"
     >"$LOG_FILE" 2>&1 \
     &
 CHROME_PID=$!
-echo "Chrome CDP 已启动 (PID: $CHROME_PID)"
+echo "Chrome 进程已启动 (PID: $CHROME_PID)，等待 CDP 端口就绪..."
+
+# 等待 CDP 端口真正可连（最多 15 秒）。Chrome 进程起来不代表 CDP 已 listen。
+CDP_READY=0
+for i in $(seq 1 30); do
+    if nc -z 127.0.0.1 $PORT 2>/dev/null; then
+        CDP_READY=1
+        break
+    fi
+    # 顺便检测 Chrome 进程是否还活着——异常退出就立刻报错
+    if ! kill -0 $CHROME_PID 2>/dev/null; then
+        echo ""
+        echo "❌  Chrome 已退出（启动失败）。最近日志："
+        echo "─────────────────────────────"
+        tail -20 "$LOG_FILE" 2>/dev/null || echo "(无日志)"
+        echo "─────────────────────────────"
+        echo ""
+        echo "常见原因："
+        echo "  • --system 模式下日常 Chrome 还在跑（user-data-dir 冲突）"
+        echo "  • user-data-dir 残留 SingletonLock"
+        echo "  • Chrome 路径不对"
+        exit 1
+    fi
+    sleep 0.5
+done
+
+if [ $CDP_READY -ne 1 ]; then
+    echo ""
+    echo "❌  Chrome 进程跑着，但 15 秒内 CDP 端口 $PORT 仍未就绪。"
+    echo "    可能是 Chrome 卡在某个对话框（如「恢复上次会话？」「设为默认浏览器？」）。"
+    echo "    请手动点掉，然后 Ctrl-C 后重新运行此脚本。"
+    exit 1
+fi
+
+echo "✓ CDP 端口已就绪"
 echo ""
 
 if [ $USE_SYSTEM -eq 1 ]; then
