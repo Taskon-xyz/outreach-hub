@@ -86,13 +86,13 @@ SOURCES = [
     },
     {
         "id": "cs",
-        "name": "Old汤-链上变化",
+        "name": "链上变化",
         "sub":  "官网 + Twitter",
         "panel": "_build_cs_panel",
     },
     {
         "id": "tf",
-        "name": "Old汤-低交易量",
+        "name": "低交易量",
         "sub":  "仅 Twitter 账号",
         "panel": "_build_tf_panel",
     },
