@@ -70,7 +70,7 @@ git pull
 uv sync    # 若依赖有更新，会自动安装；没更新则秒退
 ```
 
-## 配套：[outreach-mobile](https://github.com/lukezhao-tech/outreach-mobile)（Android 真机版）
+## 配套：[outreach-hub-android](https://github.com/lukezhao-tech/outreach-hub-android)（Android 真机版）
 
 桌面 Playwright 在 X 上反 bot 风控越来越狠时，可以把**关键人搜索 / X DM 发送**两件事搬到手机 X App 里做（uiautomator2 + ADB）。
 
@@ -78,9 +78,9 @@ uv sync    # 若依赖有更新，会自动安装；没更新则秒退
 - **clone 到同一父目录即可，无需任何配置**：
   ```bash
   cd ~   # 或你 clone outreach-hub 的父目录
-  git clone https://github.com/lukezhao-tech/outreach-mobile.git
+  git clone https://github.com/lukezhao-tech/outreach-hub-android.git
   ```
-- 详细安装和使用见 [outreach-mobile/README](https://github.com/lukezhao-tech/outreach-mobile#readme)
+- 详细安装和使用见 [outreach-hub-android/README](https://github.com/lukezhao-tech/outreach-hub-android#readme)
 
 ## 使用
 
