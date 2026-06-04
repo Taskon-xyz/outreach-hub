@@ -219,7 +219,7 @@ def upsert_project(company_name, website, crunchbase_url="", source=None):
         # 如果已存在且有更高优先级的 source，补充标记
         if source:
             conn.execute(
-                "UPDATE projects SET source=? WHERE website=? AND source IS NULL",
+                "UPDATE projects SET source=? WHERE website=?",
                 (source, website)
             )
         conn.commit()
@@ -244,7 +244,7 @@ def upsert_project_return_id(company_name, website, source=None):
         is_new = cur.rowcount > 0
         if source:
             conn.execute(
-                "UPDATE projects SET source=? WHERE website=? AND source IS NULL",
+                "UPDATE projects SET source=? WHERE website=?",
                 (source, website)
             )
         conn.commit()
