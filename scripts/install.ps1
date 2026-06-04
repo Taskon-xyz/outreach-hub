@@ -4,10 +4,10 @@
 #
 # 使用方式 — 复制粘贴到 PowerShell 运行：
 #   Set-ExecutionPolicy Bypass -Scope Process -Force
-#   $s = Invoke-RestMethod https://raw.githubusercontent.com/lukezhao-tech/outreach-hub/main/scripts/install.ps1; Invoke-Expression $s
+#   $s = Invoke-RestMethod https://raw.githubusercontent.com/Taskon-xyz/outreach-hub/main/scripts/install.ps1; Invoke-Expression $s
 #
 # 或 clone 后运行：
-#   git clone https://github.com/lukezhao-tech/outreach-hub.git
+#   git clone https://github.com/Taskon-xyz/outreach-hub.git
 #   cd outreach-hub
 #   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 
@@ -16,7 +16,7 @@ $ErrorActionPreference = "Stop"
 # ══ 前置：TLS 1.2（Windows PowerShell 5.1 默认只用 TLS 1.0，GitHub/CDN 会拒绝） ══
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$REPO_URL = "https://github.com/lukezhao-tech/outreach-hub.git"
+$REPO_URL = "https://github.com/Taskon-xyz/outreach-hub.git"
 $REPO_NAME = "outreach-hub"
 
 Write-Host ""
