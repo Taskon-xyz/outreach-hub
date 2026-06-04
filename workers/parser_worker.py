@@ -57,6 +57,7 @@ class ParserWorker(BaseWorker):
 
             self.log(f"[{idx+1}/{total}] {url}")
             entity = None
+            linked_entity = None
             try:
                 entity = await client.get_entity(url)
                 try:
@@ -70,8 +71,31 @@ class ParserWorker(BaseWorker):
                 except Exception:
                     pass
 
+                # 广播频道：尝试找关联讨论群
+                target = entity
+                if getattr(entity, 'broadcast', False) and not getattr(entity, 'megagroup', False):
+                    linked_id = getattr(entity, 'linked_chat_id', None)
+                    if linked_id:
+                        try:
+                            linked_entity = await client.get_entity(linked_id)
+                            self.log(f"  广播频道 → 关联讨论群：{linked_entity.title}")
+                            try:
+                                await client(JoinChannelRequest(linked_entity))
+                                await asyncio.sleep(2)
+                            except Exception:
+                                pass
+                            target = linked_entity
+                        except Exception as e:
+                            self.log(f"  关联讨论群获取失败：{str(e)[:100]}")
+                            db.update_tg_link_status(link_id, "failed", "广播频道，关联讨论群获取失败")
+                            continue
+                    else:
+                        self.log(f"  广播频道，无关联讨论群，跳过")
+                        db.update_tg_link_status(link_id, "failed", "广播频道，无关联讨论群")
+                        continue
+
                 participants = await client(GetParticipantsRequest(
-                    channel=entity,
+                    channel=target,
                     filter=ChannelParticipantsAdmins(),
                     offset=0, limit=100, hash=0
                 ))
@@ -84,7 +108,7 @@ class ParserWorker(BaseWorker):
                         db.insert_tg_handle(
                             username=user.username,
                             role=role,
-                            group_name=entity.title,
+                            group_name=target.title,
                             source_link=url,
                             project_id=project_id,
                             source=link_source
@@ -102,11 +126,9 @@ class ParserWorker(BaseWorker):
                 self.log(f"  ⚠ {err_msg}")
                 db.update_tg_link_status(link_id, "failed", err_msg)
             finally:
-                if entity:
+                for e in filter(None, [linked_entity, entity]):
                     try:
-                        from telethon.tl.functions.channels import LeaveChannelRequest
-                        await client(LeaveChannelRequest(entity))
-                        self.log(f"  已退出")
+                        await client(LeaveChannelRequest(e))
                     except Exception:
                         pass
 
