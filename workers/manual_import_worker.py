@@ -15,7 +15,7 @@ COLUMN_ALIASES = {
     "company_name": ["company_name", "project_name", "项目名", "name", "公司名", "项目名称"],
     "website":      ["website", "官网", "url", "site", "网站"],
     "x_handle":     ["x_handle", "x", "twitter", "x账号", "x账号链接", "twitter_handle"],
-    "tg_handle":    ["tg_handle", "telegram", "tg", "tg账号", "telegram_handle"],
+    "tg_handle":    ["tg_handle", "tg_handler", "telegram", "tg", "tg账号", "telegram_handle"],
     "email":        ["email", "邮箱", "e-mail", "邮件"],
 }
 
