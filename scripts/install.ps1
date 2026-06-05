@@ -192,24 +192,13 @@ uv run python main.py
 pause
 "@ | Set-Content -Path $launcher -Encoding ASCII
 
-$webLauncher = Join-Path $REPO_DIR "start_web.bat"
-@"
-@echo off
-cd /d "$REPO_DIR"
-uv run python web_server.py
-echo.
-echo 浏览器打开 http://localhost:5000
-pause
-"@ | Set-Content -Path $webLauncher -Encoding ASCII
-
 # ── 完成 ──────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "============================" -ForegroundColor Cyan
 Write-Host "安装完成！" -ForegroundColor Green
 Write-Host ""
 Write-Host "日常使用："
-Write-Host "  双击 start.bat     → 启动桌面 GUI"
-Write-Host "  双击 start_web.bat → 启动 Web UI (http://localhost:5000)"
+Write-Host "  双击 start.bat → 启动桌面 GUI"
 Write-Host ""
 Write-Host "首次使用："
 Write-Host "  1. 双击 start.bat 启动程序"

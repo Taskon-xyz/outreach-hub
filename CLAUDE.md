@@ -18,9 +18,6 @@ uv run playwright install chromium
 # 启动桌面 GUI
 ./scripts/start_chrome_cdp.sh
 
-# 启动 Web UI（FastAPI + WebSocket 实时日志）
-uv run python web_server.py
-
 # 打包为 exe（PyInstaller）
 # 使用 build.ps1
 
@@ -51,7 +48,6 @@ send_log 表
 | `config.py` | **唯一配置文件**：所有常量、路径、凭证、API 地址 |
 | `db.py` | **唯一数据层**：全部 SQLite 读写 + API 客户端模式（`config.API_BASE` 非空时走 HTTP） |
 | `main.py` | 入口：`init_db()` → `App().mainloop()` |
-| `web_server.py` | FastAPI 后端：REST API + WebSocket 实时日志 + 静态文件 |
 
 ### Worker 模式
 
