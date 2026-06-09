@@ -3,12 +3,18 @@ Parser Worker — 进入 TG 群提取管理员，存入 SQLite
 基于 tg_contacts.py
 """
 import asyncio
+import time
 
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import db
 import config
 from workers.base_worker import BaseWorker
+
+# FloodWait 最大等待时间（秒），超过则跳过当前任务并暂停整批
+FLOOD_WAIT_CAP = 300
+# 正常请求间隔（秒）
+NORMAL_COOLDOWN = 10
 
 
 class ParserWorker(BaseWorker):
@@ -58,6 +64,7 @@ class ParserWorker(BaseWorker):
             self.log(f"[{idx+1}/{total}] {url}")
             entity = None
             linked_entity = None
+            flood_waited = False
             try:
                 entity = await client.get_entity(url)
                 try:
@@ -121,6 +128,27 @@ class ParserWorker(BaseWorker):
                 else:
                     db.update_tg_link_status(link_id, "failed", "无管理员用户名（可能是频道或全匿名群）")
 
+            except errors.FloodWaitError as e:
+                wait_secs = e.seconds
+                flood_waited = True
+                if wait_secs > FLOOD_WAIT_CAP:
+                    self.log(f"  ⚠ FloodWait {wait_secs}s，超过上限 {FLOOD_WAIT_CAP}s，标记待重试并暂停解析")
+                    db.update_tg_link_status(link_id, "pending", f"FloodWait {wait_secs}s")
+                    # 暂停到 FloodWait 过期（带上限）
+                    pause = min(wait_secs, FLOOD_WAIT_CAP)
+                    self.log(f"  等待 {pause}s 后继续...")
+                    for _ in range(pause):
+                        if self._stop:
+                            break
+                        await asyncio.sleep(1)
+                else:
+                    self.log(f"  ⚠ FloodWait {wait_secs}s，等待后重试...")
+                    db.update_tg_link_status(link_id, "pending", f"FloodWait {wait_secs}s")
+                    for _ in range(wait_secs):
+                        if self._stop:
+                            break
+                        await asyncio.sleep(1)
+
             except Exception as e:
                 err_msg = str(e)[:200]
                 self.log(f"  ⚠ {err_msg}")
@@ -133,11 +161,13 @@ class ParserWorker(BaseWorker):
                         pass
 
             self.progress(idx + 1, total)
-            self.log("  冷却 30 秒...")
-            for _ in range(30):
-                if self._stop:
-                    break
-                await asyncio.sleep(1)
+
+            # 正常请求冷却（被 FloodWait 时已在上方等待过，跳过）
+            if not flood_waited:
+                for _ in range(NORMAL_COOLDOWN):
+                    if self._stop:
+                        break
+                    await asyncio.sleep(1)
 
         await client.disconnect()
         self.log("解析完成！")
