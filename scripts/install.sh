@@ -61,13 +61,24 @@ fi
 
 # -- 2. 检查 Chrome --
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    CHROME="/Applications/Google Chrome.app"
-    if [ ! -d "$CHROME" ]; then
+    CHROME=""
+    # 先查两个常见安装目录（系统级 + 用户级）
+    for candidate in \
+        "/Applications/Google Chrome.app" \
+        "$HOME/Applications/Google Chrome.app"; do
+        [ -d "$candidate" ] && CHROME="$candidate" && break
+    done
+    # 兜底：用 Spotlight 按 bundle id 全局查找
+    if [ -z "$CHROME" ]; then
+        found=$(mdfind "kMDItemCFBundleIdentifier == 'com.google.Chrome'" 2>/dev/null | head -1)
+        [ -n "$found" ] && CHROME="$found"
+    fi
+    if [ -z "$CHROME" ]; then
         echo ""
         echo "[需要] 请先安装 Google Chrome: https://www.google.com/chrome/"
         exit 1
     fi
-    echo "[OK] Google Chrome"
+    echo "[OK] Google Chrome: $CHROME"
 fi
 
 # -- 3. 安装 uv（如果没有） --
