@@ -212,10 +212,22 @@ if [ $USE_SYSTEM -eq 1 ]; then
 fi
 
 # -- 3. 启动 Chrome CDP（后台）------------------------------------------------
-CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# 定位 Chrome 可执行文件：先查常见安装目录（系统级 + 用户级），再用 Spotlight 兜底
+CHROME_APP=""
+for candidate in \
+    "/Applications/Google Chrome.app" \
+    "$HOME/Applications/Google Chrome.app"; do
+    [ -d "$candidate" ] && CHROME_APP="$candidate" && break
+done
+if [ -z "$CHROME_APP" ]; then
+    found=$(mdfind "kMDItemCFBundleIdentifier == 'com.google.Chrome'" 2>/dev/null | head -1)
+    [ -n "$found" ] && CHROME_APP="$found"
+fi
+CHROME="$CHROME_APP/Contents/MacOS/Google Chrome"
 if [ ! -f "$CHROME" ]; then
-    echo "未找到 Chrome: $CHROME"
-    echo "请安装 Google Chrome 或修改此脚本中的 CHROME 路径"
+    echo "未找到 Chrome。"
+    echo "请安装 Google Chrome: https://www.google.com/chrome/"
+    echo "或修改此脚本中的 CHROME 路径"
     exit 1
 fi
 
