@@ -15,13 +15,42 @@ Web3 项目自动化触达工具。从多种数据源导入项目信息，自动
 
 ## 安装
 
-### 1. 安装 Google Chrome
+### Windows
+
+打开 PowerShell，运行以下命令：
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force
+$s = Invoke-RestMethod https://raw.githubusercontent.com/Taskon-xyz/outreach-hub/main/scripts/install.ps1
+Invoke-Expression $s
+```
+
+或先 clone 后运行：
+
+```powershell
+git clone https://github.com/Taskon-xyz/outreach-hub.git
+cd outreach-hub
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+脚本会自动安装：
+- ✅ Git（如果没有）
+- ✅ Google Chrome（如果没有）
+- ✅ uv 包管理器
+- ✅ Python 依赖
+- ✅ Playwright 浏览器引擎
+
+完成后双击 `start.bat` 启动桌面 GUI。
+
+### macOS / Linux
+
+#### 1. 安装 Google Chrome
 
 X DM 发送需要通过 Chrome 浏览器完成，请先安装：
 
 [下载 Google Chrome](https://www.google.com/chrome/)
 
-### 2. 一键安装
+#### 2. 一键安装
 
 复制以下命令到终端运行：
 
@@ -45,7 +74,9 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Taskon-xyz/outreach-hub/
 
 ### 安装完成后
 
-安装脚本结束时会自动进入 `outreach-hub` 目录。日常启动（每次新开终端后）：
+**Windows**：双击 `start.bat` 启动
+
+**macOS / Linux**：安装脚本结束时会自动进入 `outreach-hub` 目录。日常启动：
 
 ```bash
 cd outreach-hub    # 安装时 clone 的目录（通常在 home 目录下）
