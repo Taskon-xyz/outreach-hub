@@ -121,7 +121,10 @@ class XSenderPWWorker(BaseWorker):
         self.log("  • 9222 端口被占用")
         self.log("")
         self.log("修复步骤：")
-        self.log("  1. 终端运行：./scripts/start_chrome_cdp.sh --system")
+        if sys.platform == 'darwin':
+            self.log("  1. 终端运行：./scripts/start_chrome_cdp.sh --system")
+        else:
+            self.log(r"  1. 双击运行 scripts\start_chrome_cdp.bat")
         self.log("  2. 弹出 Chrome 后确认 x.com 已登录")
         self.log("  3. 回到本程序，重新点「▶ 开始发送」")
         self.log("─" * 50)

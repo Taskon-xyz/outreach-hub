@@ -187,9 +187,10 @@ uv run python -c "import playwright; print('[OK] playwright')"
 $launcher = Join-Path $REPO_DIR "start.bat"
 @"
 @echo off
+chcp 65001 >nul
 cd /d "$REPO_DIR"
-uv run python main.py
-pause
+REM 一键启动：CDP Chrome（X 发送用）+ GUI（TG/X 均走 Playwright）
+scripts\start_chrome_cdp.bat
 "@ | Set-Content -Path $launcher -Encoding ASCII
 
 # ── 完成 ──────────────────────────────────────────────────────────────────────
@@ -198,10 +199,11 @@ Write-Host "============================" -ForegroundColor Cyan
 Write-Host "安装完成！" -ForegroundColor Green
 Write-Host ""
 Write-Host "日常使用："
-Write-Host "  双击 start.bat → 启动桌面 GUI"
+Write-Host "  双击 start.bat → 一键启动 CDP Chrome + 桌面 GUI"
 Write-Host ""
 Write-Host "首次使用："
-Write-Host "  1. 双击 start.bat 启动程序"
-Write-Host "  2. 在设置页配置 Telegram 账号（如需 TG 功能）"
-Write-Host "  3. 在爬虫页点击「启动 Chrome CDP」，弹出的 Chrome 中登录 X/TG"
+Write-Host "  1. 双击 start.bat 启动（自动打开 CDP Chrome + GUI；TG/X 发送均走 Playwright）"
+Write-Host "  2. Telegram 发送：在「发送」页点开始，自动打开 Telegram Web，登录后点「已登录就绪」"
+Write-Host "  3. X 发送：start.bat 已打开 CDP Chrome，在其中登录 https://x.com，回程序点「已登录就绪」"
+Write-Host "  4. 在设置页配置 Telegram 账号（解析功能需要）"
 Write-Host ""

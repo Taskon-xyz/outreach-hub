@@ -8,12 +8,9 @@ from tkinter import messagebox
 
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if sys.platform == 'darwin':
-    from workers.tg_sender_web_worker import TGSenderWebWorker as TGSenderWorker
-    from workers.x_sender_pw_worker   import XSenderPWWorker   as XSenderWorker
-else:
-    from workers.tg_sender_worker import TGSenderWorker
-    from workers.x_sender_worker  import XSenderWorker
+# TG / X 发送两平台统一走 Playwright（浏览器自动化，无需桌面 OCR/坐标）
+from workers.tg_sender_web_worker import TGSenderWebWorker as TGSenderWorker
+from workers.x_sender_pw_worker import XSenderPWWorker as XSenderWorker
 from workers.email_sender_worker import EmailSenderWorker
 import db, config
 from gui.thread_bridge import enqueue
@@ -66,10 +63,9 @@ class SenderTab:
                                       placeholder_text=str(config.TG_MAX_PER_HOUR))
         self.e_tg_rate.pack(side="left", padx=4)
 
-        # macOS 模式提示
-        if sys.platform == 'darwin':
-            ctk.CTkLabel(frame, text="macOS 模式：Playwright 浏览器自动化",
-                         text_color="gray").pack(fill="x", padx=14, pady=4)
+        # 两平台统一：Playwright 浏览器自动化（操作 web.telegram.org）
+        ctk.CTkLabel(frame, text="Playwright 模式：连接 Telegram Web 自动发送",
+                     text_color="gray").pack(fill="x", padx=14, pady=4)
 
         # 文案信息
         self.lbl_tg_msg = ctk.CTkLabel(frame, text="激活文案：—",
@@ -95,12 +91,11 @@ class SenderTab:
                                          fg_color="#c0392b", hover_color="#922b21",
                                          state="disabled", command=self._stop_tg)
         self.btn_tg_stop.pack(side="left", padx=4)
-        if sys.platform == 'darwin':
-            self.btn_tg_ready = ctk.CTkButton(
-                btn_row, text="已登录就绪",
-                fg_color="#2196F3", hover_color="#1976D2",
-                state="disabled", command=self._ready_tg)
-            self.btn_tg_ready.pack(side="left", padx=4)
+        self.btn_tg_ready = ctk.CTkButton(
+            btn_row, text="已登录就绪",
+            fg_color="#2196F3", hover_color="#1976D2",
+            state="disabled", command=self._ready_tg)
+        self.btn_tg_ready.pack(side="left", padx=4)
 
     # ════════════════ X 发送 ════════════════════════════════
     def _build_x_panel(self, pane):
@@ -142,23 +137,9 @@ class SenderTab:
                       fg_color="gray40", hover_color="gray30",
                       command=self._refresh_x_roles).pack(side="left", padx=2)
 
-        # 坐标状态显示 / macOS Playwright 提示
-        if sys.platform == 'darwin':
-            ctk.CTkLabel(frame, text="macOS 模式：Playwright 浏览器自动化",
-                         text_color="gray").pack(fill="x", padx=14, pady=4)
-        else:
-            coord_card = ctk.CTkFrame(frame, fg_color=("gray80", "gray30"))
-            coord_card.pack(fill="x", padx=14, pady=4)
-            ctk.CTkLabel(coord_card, text="已保存坐标",
-                         font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=12, pady=(6, 2))
-            self.lbl_dm_pos   = ctk.CTkLabel(coord_card, text="DM 按钮：未校准", text_color="gray")
-            self.lbl_dm_pos.pack(anchor="w", padx=12)
-            self.lbl_chat_pos = ctk.CTkLabel(coord_card, text="消息输入框：未校准", text_color="gray")
-            self.lbl_chat_pos.pack(anchor="w", padx=12, pady=(0, 4))
-            ctk.CTkLabel(coord_card, text="坐标校准请前往「⚙️ 设置」页",
-                         text_color="gray", font=ctk.CTkFont(size=11)).pack(
-                             anchor="w", padx=12, pady=(0, 6))
-            self._refresh_pos_labels()
+        # 两平台统一：Playwright 浏览器自动化（CDP 连真实 Chrome，DOM 选择器发送）
+        ctk.CTkLabel(frame, text="Playwright 模式：连接 CDP Chrome，DOM 自动发送",
+                     text_color="gray").pack(fill="x", padx=14, pady=4)
 
         # 文案信息
         self.lbl_x_msg = ctk.CTkLabel(frame, text="激活文案：—",
@@ -194,12 +175,11 @@ class SenderTab:
                                         fg_color="#c0392b", hover_color="#922b21",
                                         state="disabled", command=self._stop_x)
         self.btn_x_stop.pack(side="left", padx=4)
-        if sys.platform == 'darwin':
-            self.btn_x_ready = ctk.CTkButton(
-                btn_row, text="已登录就绪",
-                fg_color="#2196F3", hover_color="#1976D2",
-                state="disabled", command=self._ready_x)
-            self.btn_x_ready.pack(side="left", padx=4)
+        self.btn_x_ready = ctk.CTkButton(
+            btn_row, text="已登录就绪",
+            fg_color="#2196F3", hover_color="#1976D2",
+            state="disabled", command=self._ready_x)
+        self.btn_x_ready.pack(side="left", padx=4)
 
     # ─── 工具方法 ─────────────────────────────────────────────
     def _refresh_tg_sources(self):
@@ -254,18 +234,6 @@ class SenderTab:
             self.lbl_x_msg.configure(text="激活文案：无（请在「文案」页设置）",
                                      text_color="#F44336")
 
-    def _refresh_pos_labels(self):
-        try:
-            x, y = open(config.DM_POS_FILE).read().strip().split(',')
-            self.lbl_dm_pos.configure(text=f"DM 按钮：({x}, {y})", text_color="#4CAF50")
-        except Exception:
-            self.lbl_dm_pos.configure(text="DM 按钮：未校准", text_color="gray")
-        try:
-            x, y = open(config.CHAT_POS_FILE).read().strip().split(',')
-            self.lbl_chat_pos.configure(text=f"消息输入框：({x}, {y})", text_color="#4CAF50")
-        except Exception:
-            self.lbl_chat_pos.configure(text="消息输入框：未校准", text_color="gray")
-
     # ── TG 发送 ───────────────────────────────────────────────
     def _log_tg(self, msg):
         def _do():
@@ -289,8 +257,7 @@ class SenderTab:
 
         self.btn_tg_start.configure(state="disabled")
         self.btn_tg_stop.configure(state="normal")
-        if sys.platform == 'darwin' and hasattr(self, 'btn_tg_ready'):
-            self.btn_tg_ready.configure(state="normal")
+        self.btn_tg_ready.configure(state="normal")
         self.tg_w = TGSenderWorker(
             log_callback=self._log_tg,
             source=source,
@@ -304,8 +271,7 @@ class SenderTab:
         self.tg_w.run()
         enqueue(lambda: self.btn_tg_start.configure(state="normal"))
         enqueue(lambda: self.btn_tg_stop.configure(state="disabled"))
-        if sys.platform == 'darwin' and hasattr(self, 'btn_tg_ready'):
-            enqueue(lambda: self.btn_tg_ready.configure(state="disabled"))
+        enqueue(lambda: self.btn_tg_ready.configure(state="disabled"))
 
     def _ready_tg(self):
         if self.tg_w and hasattr(self.tg_w, 'set_ready'):
@@ -331,10 +297,6 @@ class SenderTab:
         if not tmpl:
             messagebox.showwarning("无文案", "请先在「文案」页激活一条 X 文案")
             return
-        if sys.platform != 'darwin':
-            if not os.path.exists(config.DM_POS_FILE) or not os.path.exists(config.CHAT_POS_FILE):
-                messagebox.showwarning("未校准", "请先在「⚙️ 设置」页完成坐标校准")
-                return
 
         mode_sel = self.x_mode.get() if hasattr(self, "x_mode") else "项目官号 (x_links)"
         if "x_contacts" in mode_sel:
@@ -352,8 +314,7 @@ class SenderTab:
         self.btn_x_pause.configure(state="normal")
         self.btn_x_resume.configure(state="disabled")
         self.btn_x_stop.configure(state="normal")
-        if sys.platform == 'darwin' and hasattr(self, 'btn_x_ready'):
-            self.btn_x_ready.configure(state="normal")
+        self.btn_x_ready.configure(state="normal")
         self.x_w = XSenderWorker(
             log_callback=self._log_x,
             message_name=tmpl["name"],
@@ -370,8 +331,7 @@ class SenderTab:
         enqueue(lambda: self.btn_x_pause.configure(state="disabled"))
         enqueue(lambda: self.btn_x_resume.configure(state="disabled"))
         enqueue(lambda: self.btn_x_stop.configure(state="disabled"))
-        if sys.platform == 'darwin' and hasattr(self, 'btn_x_ready'):
-            enqueue(lambda: self.btn_x_ready.configure(state="disabled"))
+        enqueue(lambda: self.btn_x_ready.configure(state="disabled"))
 
     def _ready_x(self):
         if self.x_w and hasattr(self.x_w, 'set_ready'):

@@ -1110,7 +1110,11 @@ def save_tg_search_pos(x, y):
 
 
 def get_send_check_region():
-    """返回发送后错误检测的截图区域。未配置时动态取屏幕中间 1/2。"""
+    """返回发送后错误检测的截图区域。未配置时用默认屏幕中间 1/2。
+
+    注：TG 发送已统一走 Playwright（web.telegram.org），此函数仅遗留代码
+    调用，不再依赖 pyautogui 取屏幕尺寸。
+    """
     top    = get_setting("send_check_top",    None)
     left   = get_setting("send_check_left",   None)
     width  = get_setting("send_check_width",  None)
@@ -1118,11 +1122,7 @@ def get_send_check_region():
     if all(v is not None for v in [top, left, width, height]):
         return {"top": int(top), "left": int(left),
                 "width": int(width), "height": int(height)}
-    try:
-        import pyautogui
-        sw, sh = pyautogui.size()
-    except Exception:
-        sw, sh = 1920, 1080
+    sw, sh = 1920, 1080
     return {"top": sh // 4, "left": 0, "width": sw, "height": sh // 2}
 
 

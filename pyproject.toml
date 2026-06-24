@@ -14,11 +14,7 @@ dependencies = [
     # 数据处理
     "pandas>=2.0.0,<3",
     "openpyxl>=3.1.0,<4",
-    # 桌面自动化（Windows 发送用）
-    "pyautogui>=0.9.54,<1",
-    "pyperclip>=1.8.0,<2",
-    # OCR
-    "mss>=10.0.0,<11",
+    # 图像处理
     "pillow>=10.0.0,<11",
     # HTML 解析
     "beautifulsoup4>=4.12.0,<5",
@@ -27,10 +23,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Windows 专用：WinRT OCR（TG 发送用，仅支持 Python 3.11 + Windows）
-windows = [
-    "winocr>=0.0.15,<1 ; sys_platform == 'win32' and python_version < '3.12'",
-]
 
 [dependency-groups]
 
