@@ -31,21 +31,18 @@ class SenderTab:
         ctk.CTkLabel(self.parent, text="发送控制",
                      font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(14, 6))
 
-        pane = ctk.CTkFrame(self.parent, fg_color="transparent")
-        pane.pack(fill="both", expand=True, padx=10, pady=4)
-        pane.columnconfigure(0, weight=1)
-        pane.columnconfigure(1, weight=1)
-        pane.columnconfigure(2, weight=1)
+        # 三个发送渠道拆成子 Tab：每个渠道独占屏幕，按钮不会被挤隐藏
+        self.sub_tabs = ctk.CTkTabview(self.parent)
+        self.sub_tabs.pack(fill="both", expand=True, padx=10, pady=4)
 
-        self._build_tg_panel(pane)
-        self._build_x_panel(pane)
-        self._build_email_panel(pane)
+        self._build_tg_panel(self.sub_tabs.add("Telegram"))
+        self._build_x_panel(self.sub_tabs.add("X (Twitter)"))
+        self._build_email_panel(self.sub_tabs.add("邮件"))
 
     # ════════════════ TG 发送 ════════════════════════════════
     def _build_tg_panel(self, pane):
         frame = ctk.CTkFrame(pane, fg_color=("gray85", "gray22"))
-        frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-        frame.rowconfigure(4, weight=1)
+        frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         ctk.CTkLabel(frame, text="Telegram 发送",
                      font=ctk.CTkFont(weight="bold")).pack(pady=(10, 4))
@@ -90,7 +87,7 @@ class SenderTab:
 
         # 按钮
         btn_row = ctk.CTkFrame(frame, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)
         self.btn_tg_start = ctk.CTkButton(btn_row, text="▶ 开始发送",
                                           command=self._start_tg)
         self.btn_tg_start.pack(side="left", padx=4)
@@ -108,8 +105,7 @@ class SenderTab:
     # ════════════════ X 发送 ════════════════════════════════
     def _build_x_panel(self, pane):
         frame = ctk.CTkFrame(pane, fg_color=("gray85", "gray22"))
-        frame.grid(row=0, column=1, sticky="nsew", padx=5)
-        frame.rowconfigure(4, weight=1)
+        frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         ctk.CTkLabel(frame, text="X (Twitter) 发送",
                      font=ctk.CTkFont(weight="bold")).pack(pady=(10, 4))
@@ -180,7 +176,7 @@ class SenderTab:
 
         # 按钮
         btn_row = ctk.CTkFrame(frame, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)
         self.btn_x_start = ctk.CTkButton(btn_row, text="▶ 开始发送",
                                          command=self._start_x)
         self.btn_x_start.pack(side="left", padx=4)
@@ -405,7 +401,7 @@ class SenderTab:
     # ════════════════ 邮件发送 ════════════════════════════════
     def _build_email_panel(self, pane):
         frame = ctk.CTkFrame(pane, fg_color=("gray85", "gray22"))
-        frame.grid(row=0, column=2, sticky="nsew", padx=(5, 0))
+        frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         ctk.CTkLabel(frame, text="邮件发送",
                      font=ctk.CTkFont(weight="bold")).pack(pady=(10, 4))
@@ -446,7 +442,7 @@ class SenderTab:
         self.email_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(frame, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)
         self.btn_email_start = ctk.CTkButton(btn_row, text="▶ 开始发送",
                                              command=self._start_email)
         self.btn_email_start.pack(side="left", padx=4)
