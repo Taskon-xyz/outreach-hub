@@ -160,11 +160,12 @@ class ScraperTab:
         main.columnconfigure(0, weight=0)   # 左侧导航，固定 210px
         main.columnconfigure(1, weight=1)    # 右侧填满剩余空间
 
-        # ── 左侧：导航卡片列表（固定宽度，不缩放）──────────────────
-        nav = ctk.CTkFrame(main, fg_color=("gray85", "gray22"), corner_radius=8)
-        nav.configure(width=210)
+        # ── 左侧：导航卡片列表（固定宽度，可滚动）──────────────────
+        # 数据源较多（10+），用可滚动容器，窗口较矮时底部按钮也能滚动到
+        nav = ctk.CTkScrollableFrame(
+            main, fg_color=("gray85", "gray22"), corner_radius=8, width=220
+        )
         nav.grid(row=0, column=0, sticky="ns", padx=(0, 6))
-        nav.grid_propagate(False)   # 固定宽度，防止按钮撑大
 
         ctk.CTkLabel(
             nav, text="数据源",
@@ -299,7 +300,7 @@ class ScraperTab:
         self.sc_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.sc_btn_start = ctk.CTkButton(btn_row, text="▶ 开始爬取",
                                           command=self._sc_start)
         self.sc_btn_start.pack(side="left", padx=4)
@@ -350,7 +351,7 @@ class ScraperTab:
         self.cb_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.cb_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
                                           width=80, command=self._cb_start)
         self.cb_btn_start.pack(side="left", padx=3)
@@ -415,7 +416,7 @@ class ScraperTab:
         self.rd_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.rd_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
                                           width=80, command=self._rd_start)
         self.rd_btn_start.pack(side="left", padx=3)
@@ -458,7 +459,7 @@ class ScraperTab:
         self.cs_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.cs_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
                                           width=80, command=self._cs_start)
         self.cs_btn_start.pack(side="left", padx=3)
@@ -496,7 +497,7 @@ class ScraperTab:
         self.tf_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.tf_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
                                           width=80, command=self._tf_start)
         self.tf_btn_start.pack(side="left", padx=3)
@@ -534,7 +535,7 @@ class ScraperTab:
         self.ct_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.ct_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
                                           width=80, command=self._ct_start)
         self.ct_btn_start.pack(side="left", padx=3)
@@ -572,7 +573,7 @@ class ScraperTab:
         self.ck_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.ck_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
                                           width=80, command=self._ck_start)
         self.ck_btn_start.pack(side="left", padx=3)
@@ -625,7 +626,7 @@ class ScraperTab:
         self.cr_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.cr_btn_start = ctk.CTkButton(btn_row, text="▶ 开始",
                                           width=80, command=self._cr_start)
         self.cr_btn_start.pack(side="left", padx=3)
@@ -1096,7 +1097,7 @@ class ScraperTab:
         self.import_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.import_btn_start = ctk.CTkButton(btn_row, text="▶ 开始导入",
                                               command=self._import_start)
         self.import_btn_start.pack(side="left", padx=4)
@@ -1265,7 +1266,7 @@ class ScraperTab:
         self.xps_log.configure(state="disabled")
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(pady=6)
+        btn_row.pack(side="bottom", fill="x", pady=6)   # 底部停靠：小屏下按钮始终可见（与发送页一致）
         self.xps_btn_start = ctk.CTkButton(btn_row, text="▶ 开始搜索",
                                            command=self._xps_start)
         self.xps_btn_start.pack(side="left", padx=4)
