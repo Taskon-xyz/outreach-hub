@@ -34,7 +34,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if ($winget) {
         Write-Host "  使用 winget 安装 Git for Windows..."
-        winget install --id Git.Git --accept-package-agreements --accept-source-agreements
+        winget install --id Git.Git --source winget --accept-package-agreements --accept-source-agreements
     } else {
         # 没有 winget：下载安装包
         Write-Host "  下载 Git for Windows 安装包..."
@@ -103,7 +103,7 @@ if ($chromeFound) {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if ($winget) {
         Write-Host "  使用 winget 安装 Chrome..."
-        winget install --id Google.Chrome --accept-package-agreements --accept-source-agreements
+        winget install --id Google.Chrome --source winget --accept-package-agreements --accept-source-agreements
     } else {
         $chromeInstaller = "$env:TEMP\ChromeSetup.exe"
         Write-Host "  下载 Chrome 安装程序..."
@@ -134,17 +134,27 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if ($winget) {
         Write-Host "  使用 winget 安装 uv..."
-        winget install --id astral-sh.uv --accept-package-agreements --accept-source-agreements
-    } else {
-        $uvInstaller = "$env:TEMP\uv_install.ps1"
-        Invoke-WebRequest -Uri "https://astral.sh/uv/install.ps1" -OutFile $uvInstaller -UseBasicParsing
-        powershell -ExecutionPolicy Bypass -File $uvInstaller
+        # --source winget：msstore 源常因证书问题(0x8a15005e)失败并触发多源歧义，
+        # 明确指定 winget 源，避免 winget 停下要求手动选择源而实际未安装。
+        winget install --id astral-sh.uv --source winget --accept-package-agreements --accept-source-agreements
     }
 
     # 刷新 PATH
     $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = "$machinePath;$userPath"
+
+    # winget 可能仍失败（证书/网络/源），fallback 到 uv 官方安装脚本
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        Write-Host "  winget 未成功，改用 uv 官方安装脚本..." -ForegroundColor Yellow
+        $uvInstaller = "$env:TEMP\uv_install.ps1"
+        Invoke-WebRequest -Uri "https://astral.sh/uv/install.ps1" -OutFile $uvInstaller -UseBasicParsing
+        powershell -ExecutionPolicy Bypass -File $uvInstaller
+        # 官方脚本装完后再次刷新 PATH
+        $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = "$machinePath;$userPath"
+    }
 
     # uv 常见安装路径
     if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -193,13 +203,36 @@ REM 一键启动：CDP Chrome（X 发送用）+ GUI（TG/X 均走 Playwright）
 scripts\start_chrome_cdp.bat
 "@ | Set-Content -Path $launcher -Encoding ASCII
 
+# ── 7. 桌面快捷方式（指向 start_chrome_cdp.bat，一键启动）──────────────────
+$desktop = [Environment]::GetFolderPath("Desktop")
+$lnkPath = Join-Path $desktop "Outreach Hub.lnk"
+try {
+    $wsh = New-Object -ComObject WScript.Shell
+    $sc  = $wsh.CreateShortcut($lnkPath)
+    $sc.TargetPath       = Join-Path $REPO_DIR "scripts\start_chrome_cdp.bat"
+    $sc.WorkingDirectory = $REPO_DIR
+    $sc.Description      = "启动 Outreach Hub（CDP Chrome + 桌面 GUI）"
+    # 用 Chrome 图标，比默认 .bat 图标美观
+    $chromeExe = @(
+        "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "${env:LOCALAPPDATA}\Google\Chrome\Application\chrome.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($chromeExe) { $sc.IconLocation = "$chromeExe,0" }
+    $sc.Save()
+    Write-Host "[OK] 桌面快捷方式：$lnkPath" -ForegroundColor Green
+} catch {
+    Write-Host "[警告] 桌面快捷方式创建失败：$($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "       可手动右键 scripts\start_chrome_cdp.bat → 发送到 → 桌面快捷方式" -ForegroundColor Gray
+}
+
 # ── 完成 ──────────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "============================" -ForegroundColor Cyan
 Write-Host "安装完成！" -ForegroundColor Green
 Write-Host ""
 Write-Host "日常使用："
-Write-Host "  双击 start.bat → 一键启动 CDP Chrome + 桌面 GUI"
+Write-Host "  双击桌面的「Outreach Hub」快捷方式 → 一键启动 CDP Chrome + 桌面 GUI"
 Write-Host ""
 Write-Host "首次使用："
 Write-Host "  1. 双击 start.bat 启动（自动打开 CDP Chrome + GUI；TG/X 发送均走 Playwright）"
