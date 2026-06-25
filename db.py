@@ -1166,17 +1166,23 @@ def _cooldown_clause(channel, col="handle"):
     col    : 外层表中与 send_log.handle 对应的列名（handle 或 username）
     冷却=0 : 排除所有历史发送（永不重发）
     冷却>0 : 只排除冷却期内发送过的（冷却期后可再次触达）
+
+    注意：比较统一用 lower() 大小写不敏感匹配。X 的 handle 大小写会因
+    爬取时机 / X 服务端规范化而变化（如 x_links 存 'etherealize_io'，
+    send_log 存 'Etherealize_IO'），若用默认 BINARY 比较，NOT IN 会判定
+    为「未发过」导致同一账号被反复发送。TG 用户名恒小写、email 本就不
+    区分大小写，lower() 对它们无副作用。
     """
     cooldown = get_cooldown_hours()
     if cooldown == 0:
         return (
-            f"{col} NOT IN (SELECT handle FROM send_log WHERE channel=?)",
+            f"lower({col}) NOT IN (SELECT lower(handle) FROM send_log WHERE channel=?)",
             (channel,)
         )
     else:
         return (
-            f"{col} NOT IN ("
-            f"  SELECT handle FROM send_log"
+            f"lower({col}) NOT IN ("
+            f"  SELECT lower(handle) FROM send_log"
             f"  WHERE channel=?"
             f"  AND sent_at > datetime('now', ? || ' hours')"
             f")",
