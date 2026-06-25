@@ -290,14 +290,17 @@ class XSenderPWWorker(BaseWorker):
 
         except Exception as e:
             self.log(f"  发送异常：{str(e)[:80]}")
+            return False
         finally:
-            # 确保关闭任何残留弹窗，回到 DM 主页面
+            # 确保关闭任何残留弹窗，回到 DM 主页面。
+            # ⚠️ finally 里绝不能 return：会覆盖 try 中的 return True，
+            # 导致发送成功却返回 False → send_log 不记录 → 冷却永远失效
+            # （同一账号被反复发送的历史根因）。清理逻辑放这里即可。
             try:
                 await page.keyboard.press("Escape")
                 await asyncio.sleep(0.5)
             except Exception:
                 pass
-            return False
 
     async def _find_and_click_result(self, page, handle_lower):
         """
