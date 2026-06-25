@@ -8,16 +8,31 @@ from tkinter import simpledialog
 
 
 def _dialog(title, prompt, show_password=False):
-    """从任意线程弹出输入框。返回用户输入或 None（取消）"""
-    import tkinter as tk
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
+    """
+    弹出一个输入框，返回用户输入或 None（取消）。
+
+    ⚠️ Tk 窗口只能在主线程创建与操作。本函数会自动把实际弹框动作 marshal
+    到主线程执行——无论调用方处于主线程还是后台线程都安全。这正是修复
+    “后台线程里点登录验证 → 看不到弹框 → 登录失败或已取消”的根因：
+    旧实现在后台线程直接 tk.Tk() 建窗，macOS 崩溃（NSWindow must be on
+    main thread）、Windows 静默返回 None 被当成“用户取消”。
+    """
+    def _impl():
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        try:
+            return simpledialog.askstring(
+                title, prompt, parent=root, show="*" if show_password else None)
+        finally:
+            root.destroy()
+
     try:
-        return simpledialog.askstring(
-            title, prompt, parent=root, show="*" if show_password else None)
-    finally:
-        root.destroy()
+        from gui.thread_bridge import call_on_main
+    except Exception:
+        return _impl()   # 无 gui 包（纯命令行环境），回退直接执行
+    return call_on_main(_impl)
 
 
 async def async_start_client(client, log_callback=None):
