@@ -118,7 +118,7 @@ uv sync    # 若依赖有更新，会自动安装；没更新则秒退
 2. 启动桌面 GUI 应用
 
 **X DM 发送流程**：
-1. 在弹出的 Chrome 中登录 Twitter（`x.com`）
+1. 确认弹出的 Chrome 中 Twitter（`x.com`）已登录（首次会自动从日常 Chrome 同步登录态，无需手登）
 2. 回到应用界面，点击「开始发送」
 3. 等待浏览器打开 DM 页面后，点击「已登录就绪」
 4. 自动逐个发送 DM
@@ -127,34 +127,38 @@ uv sync    # 若依赖有更新，会自动安装；没更新则秒退
 
 | 命令 | 说明 |
 |------|------|
-| `./scripts/start_chrome_cdp.sh` | **默认**。隔离 profile（`data/chrome_cdp_session/`），全新登录 |
-| `./scripts/start_chrome_cdp.sh --system` | **从日常 Chrome 拷贝 cookies / 登录态到隔离 profile**，X 不会判定为新设备。自动扫描所有 profile 挑含 X 登录态的那个 |
-| `./scripts/start_chrome_cdp.sh --system --refresh` | 强制重新拷贝（日常 Chrome 改密码或换号后用一次） |
-| `./scripts/start_chrome_cdp.sh --system --profile "Profile 1"` | 多个 profile 都登录了 X 时，显式指定从哪个拷 |
+| `./scripts/start_chrome_cdp.sh` | **默认（智能）**。隔离 profile 已有登录态 → 直接复用；空白 → 自动从日常 Chrome 同步登录态（需先退出 Chrome） |
+| `./scripts/start_chrome_cdp.sh --refresh` | 强制重新同步（日常 Chrome 改密码或换号后用一次） |
+| `./scripts/start_chrome_cdp.sh --profile "Profile 1"` | 多个 profile 都登录了 X 时，显式指定从哪个拷 |
+| `./scripts/start_chrome_cdp.sh --no-system` | 不拷贝，纯空白 profile（调试 / 手登用，首次可能被 X 风控） |
 | `./scripts/start_chrome_cdp.sh --help` | 查看用法 |
 
-#### 何时需要 `--system`？
+> Windows 用 `scripts\start_chrome_cdp.bat`，参数同上。
 
-X 把脚本启动的「干净 Chrome」视作新设备，首次登录时常常**输完密码又被打回登录页循环**（典型反 bot 软封）。这时改用 `--system`：
+#### 首次启动会自动同步登录态
+
+X 把脚本启动的「干净 Chrome」视作新设备，**首次登录常常输完密码又被打回登录页循环**（典型反 bot 软封；Windows 上会出现「我们已临时限制你的登录」）。所以默认行为是：首次启动时自动把你**日常 Chrome** 的 X 登录态搬到隔离 profile，弹出的 Chrome 直接是登录态，X 视你为老用户。
 
 ```bash
-# 1. 完全退出日常 Chrome（⌘Q，不只是关窗口；脚本要读 cookies SQLite，被写锁会损坏）
-# 2. 启动 outreach-hub
-./scripts/start_chrome_cdp.sh --system
+# 1. 在日常 Chrome 里登录 https://x.com（如果还没登）
+# 2. 完全退出日常 Chrome（macOS ⌘Q；Windows 含任务栏托盘后台进程）
+#    —— 脚本要读 cookies SQLite，被写锁占用拷出来会损坏
+# 3. 启动 outreach-hub（首次自动同步，之后永久复用）
+./scripts/start_chrome_cdp.sh
 ```
 
-`--system` 启动时会**扫描你日常 Chrome 的所有 profile**（`Default`、`Profile 1`、`Profile 2` ...），通过 SQLite 直接查每个 profile 的 cookies 数据库，找出含 X `auth_token` 的那个，把它的 cookies / Local State 拷贝到隔离 profile。弹出的 Chrome 直接是登录态，X 把你视作老用户。
+同步时会**扫描日常 Chrome 的所有 profile**（`Default`、`Profile 1`、`Profile 2` ...），通过 SQLite 直接查每个 profile 的 cookies 数据库，找出含 X `auth_token` 的那个，把它的 cookies / Local State 拷到隔离 profile（Windows 无 sqlite3 时默认用 `Default`，检测到多 profile 会提示用 `--profile` 指定）。
 
 - **只有一个 profile 登录了 X**：自动选中，无需任何参数
 - **多个 profile 都登录了 X**：脚本会列出所有候选并报错退出，让你用 `--profile NAME` 显式指定，例如 `--profile "Profile 1"`
-- **没有任何 profile 登录 X**：脚本会要求你先打开日常 Chrome 登录 `https://x.com`，⌘Q 退出再重试
+- **没有任何 profile 登录 X**：脚本会要求你先在日常 Chrome 登录 `https://x.com`，退出再重试
 
 > **为什么不直接复用日常 profile？** Chrome 136+ 出于安全考虑，禁止在默认 profile 上开 `--remote-debugging-port`（防恶意软件偷登录态）。所以脚本必须用独立 profile，再把日常 Chrome 的认证文件搬过去。
 
 ⚠️ **使用注意**：
-- 拷贝前必须**完全退出**日常 Chrome（⌘Q，不只是关窗口），否则 cookies SQLite 还被锁住
-- 拷贝只在隔离 profile 首次为空时进行，之后启动会复用上次的状态；日常 Chrome 改密码或换号后跑 `--system --refresh` 重刷一次
-- 拷贝完成后，日常 Chrome 可以随便开，不影响 outreach-hub 这边的隔离 profile
+- 首次同步前必须**完全退出**日常 Chrome（macOS ⌘Q；Windows 含任务栏托盘），否则 cookies SQLite 被锁，拷出来会损坏
+- 同步只在隔离 profile 首次为空时进行（有 `.initialized` 标志或 cookies 已足够大则跳过），之后启动复用上次状态；日常 Chrome 改密码或换号后跑 `--refresh` 重刷一次
+- 同步完成后，日常 Chrome 可以随便开，不影响 outreach-hub 这边的隔离 profile
 
 ## 数据流
 
@@ -185,6 +189,6 @@ outreach-hub/
   scripts/
     install.sh             # 一键安装（给新同事用）
     install_browsers.sh    # 环境准备（install.sh 内部调用）
-    start_chrome_cdp.sh    # 日常启动（Chrome + GUI），加 --system 复用日常 profile
+    start_chrome_cdp.sh    # 日常启动（Chrome + GUI），首次自动同步日常 Chrome 的 X 登录态
   data/                # 数据库、session（自动创建，不入版本控制）
 ```

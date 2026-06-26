@@ -241,7 +241,7 @@ Source Tag 用来标记这批数据从哪来的。例如：
 ### Q: X 发送时 Chrome 没有弹出？
 
 - 确认已安装 Google Chrome
-- macOS 用户使用 `--system` 参数启动：`./scripts/start_chrome_cdp.sh --system`
+- macOS 用户直接运行：`./scripts/start_chrome_cdp.sh`（首次自动从日常 Chrome 同步 X 登录态）
 - Windows 用户直接双击 `start.bat`
 
 ### Q: 发送被限制/封号了怎么办？
@@ -249,7 +249,7 @@ Source Tag 用来标记这批数据从哪来的。例如：
 - 增加发送冷却时间（建议 120 秒以上）
 - 减少单次发送数量
 - 每天发送量控制在平台安全范围内（TG 建议 < 50 条/天，X 建议 < 30 条/天）
-- 使用 `--system` 模式启动 Chrome（让 X 认为你是老用户）
+- 首次启动会自动从日常 Chrome 同步 X 登录态（让 X 认为你是老用户，无需手登）
 
 ### Q: 数据能共享给同事吗？
 
