@@ -27,8 +27,8 @@ set PORT=9222
 set USER_DATA=%cd%\data\chrome_cdp_session
 set SRC_DIR=%LOCALAPPDATA%\Google\Chrome\User Data
 set INIT_FLAG=%USER_DATA%\.initialized
-REM 登录态 cookies 通常 ≥ 20KB；Chrome 全新 profile 的空 Cookies DB 约 8-12KB
-set COOKIE_SIZE_MIN=20000
+REM 是否已初始化只看 .initialized 标志（同步成功才写）。不再用 cookies 文件大小
+REM 判断——登录失败时 X 也会写大量 guest cookies，会误判「已登录」而跳过同步。
 
 REM ── 0. 解析参数 ──────────────────────────────────────────────────────────────
 set MODE=auto
@@ -80,16 +80,9 @@ if "%MODE%"=="refresh" (
     goto decided
 )
 
-REM auto：先假设空白（需要拷），再逐项排除
+REM auto：没有 .initialized 标志就同步（首次 / 上次未成功同步）
 set NEED_COPY=1
-if exist "%INIT_FLAG%" (
-    set "NEED_COPY=0"
-    goto decided
-)
-set "COOKIE=%USER_DATA%\Default\Network\Cookies"
-if not exist "%COOKIE%" set "COOKIE=%USER_DATA%\Default\Cookies"
-if not exist "%COOKIE%" goto decided
-for %%S in ("%COOKIE%") do if %%~zS GEQ %COOKIE_SIZE_MIN% set "NEED_COPY=0"
+if exist "%INIT_FLAG%" set "NEED_COPY=0"
 
 :decided
 

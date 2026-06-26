@@ -23,8 +23,8 @@ PROJECT_ROOT="$(pwd)"
 USER_DATA="$PROJECT_ROOT/data/chrome_cdp_session"
 SYSTEM_PROFILE="$HOME/Library/Application Support/Google/Chrome"
 INIT_FLAG="$USER_DATA/.initialized"
-# 登录态 cookies 通常 ≥ 20KB；Chrome 全新 profile 的空 Cookies DB 约 8-12KB。
-COOKIE_SIZE_MIN=20000
+# 是否已初始化只看 .initialized 标志（同步成功才写）。不再用 cookies 文件大小
+# 判断——登录失败时 X 也会写大量 guest cookies，会误判「已登录」而跳过同步。
 
 # -- 0. 解析参数 --------------------------------------------------------------
 MODE="auto"            # auto | refresh | nosystem
@@ -73,19 +73,9 @@ if [ "$MODE" != "nosystem" ]; then
     if [ "$MODE" = "refresh" ]; then
         NEED_COPY=1
         echo "[--refresh] 强制重新拷贝日常 Chrome 登录态..."
-    else
-        if [ -f "$INIT_FLAG" ]; then
-            NEED_COPY=0
-        else
-            # cookies 大小兜底：即使没有 .initialized 标志，cookies 够大也算已登录
-            ck="$USER_DATA/Default/Network/Cookies"
-            [ -f "$ck" ] || ck="$USER_DATA/Default/Cookies"
-            ck_size=0
-            if [ -f "$ck" ]; then ck_size=$(stat -f%z "$ck" 2>/dev/null || echo 0); fi
-            if [ "$ck_size" -lt "$COOKIE_SIZE_MIN" ]; then
-                NEED_COPY=1
-            fi
-        fi
+    elif [ ! -f "$INIT_FLAG" ]; then
+        # 没有 .initialized 标志 = 首次 / 上次未成功同步 → 需要拷贝
+        NEED_COPY=1
     fi
 fi
 

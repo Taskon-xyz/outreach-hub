@@ -157,7 +157,7 @@ X 把脚本启动的「干净 Chrome」视作新设备，**首次登录常常输
 
 ⚠️ **使用注意**：
 - 首次同步前必须**完全退出**日常 Chrome（macOS ⌘Q；Windows 含任务栏托盘），否则 cookies SQLite 被锁，拷出来会损坏
-- 同步只在隔离 profile 首次为空时进行（有 `.initialized` 标志或 cookies 已足够大则跳过），之后启动复用上次状态；日常 Chrome 改密码或换号后跑 `--refresh` 重刷一次
+- 同步只在隔离 profile 没有 `.initialized` 标志时进行（首次或上次未成功同步）；同步成功才写标志，之后启动复用上次状态；日常 Chrome 改密码或换号后跑 `--refresh` 重刷一次
 - 同步完成后，日常 Chrome 可以随便开，不影响 outreach-hub 这边的隔离 profile
 
 ## 数据流
