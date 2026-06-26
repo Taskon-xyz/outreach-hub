@@ -118,7 +118,7 @@ uv sync    # 若依赖有更新，会自动安装；没更新则秒退
 2. 启动桌面 GUI 应用
 
 **X DM 发送流程**：
-1. 确认弹出的 Chrome 中 Twitter（`x.com`）已登录（首次会自动从日常 Chrome 同步登录态，无需手登）
+1. 确认弹出的 Chrome 中 Twitter（`x.com`）已登录（macOS 首次自动从日常 Chrome 同步登录态；Windows 用 auth_token 注入，见下文「[Windows：X 登录态注入](#windowsx-登录态注入绕过-app-bound-加密)」）
 2. 回到应用界面，点击「开始发送」
 3. 等待浏览器打开 DM 页面后，点击「已登录就绪」
 4. 自动逐个发送 DM
@@ -135,9 +135,11 @@ uv sync    # 若依赖有更新，会自动安装；没更新则秒退
 
 > Windows 用 `scripts\start_chrome_cdp.bat`，参数同上。
 
-#### 首次启动会自动同步登录态
+#### 首次启动会自动同步登录态（macOS）
 
-X 把脚本启动的「干净 Chrome」视作新设备，**首次登录常常输完密码又被打回登录页循环**（典型反 bot 软封；Windows 上会出现「我们已临时限制你的登录」）。所以默认行为是：首次启动时自动把你**日常 Chrome** 的 X 登录态搬到隔离 profile，弹出的 Chrome 直接是登录态，X 视你为老用户。
+X 把脚本启动的「干净 Chrome」视作新设备，**首次登录常常输完密码又被打回登录页循环**（典型反 bot 软封；Windows 上会出现「我们已临时限制你的登录」）。所以 macOS 默认行为是：首次启动时自动把你**日常 Chrome** 的 X 登录态搬到隔离 profile，弹出的 Chrome 直接是登录态，X 视你为老用户。
+
+> **Windows 用户**：自动同步在 Windows 上**无效**——Chrome 127+ 的 App-Bound 加密让拷贝的 cookies 在新 profile 里解不开、启动时被丢弃（已实测：完整复制整个 User Data 后 CDP profile 里 `auth_token` 仍为 0）。Windows 改用「注入 auth_token」，见 [下文「Windows：X 登录态注入」](#windowsx-登录态注入绕过-app-bound-加密)。
 
 ```bash
 # 1. 在日常 Chrome 里登录 https://x.com（如果还没登）
@@ -156,9 +158,34 @@ X 把脚本启动的「干净 Chrome」视作新设备，**首次登录常常输
 > **为什么不直接复用日常 profile？** Chrome 136+ 出于安全考虑，禁止在默认 profile 上开 `--remote-debugging-port`（防恶意软件偷登录态）。所以脚本必须用独立 profile，再把日常 Chrome 的认证文件搬过去。
 
 ⚠️ **使用注意**：
-- 首次同步前必须**完全退出**日常 Chrome（macOS ⌘Q；Windows 含任务栏托盘），否则 cookies SQLite 被锁，拷出来会损坏
+- 首次同步前必须**完全退出**日常 Chrome（macOS ⌘Q），否则 cookies SQLite 被锁，拷出来会损坏
 - 同步只在隔离 profile 没有 `.initialized` 标志时进行（首次或上次未成功同步）；同步成功才写标志，之后启动复用上次状态；日常 Chrome 改密码或换号后跑 `--refresh` 重刷一次
 - 同步完成后，日常 Chrome 可以随便开，不影响 outreach-hub 这边的隔离 profile
+
+#### Windows：X 登录态注入（绕过 App-Bound 加密）
+
+Windows Chrome 127+ 的 App-Bound 加密把 cookies 密钥绑死在 Chrome 安装本身，**拷贝 cookies 文件到新 profile 后 Chrome 解不开、启动时直接丢弃**。所以 Windows 不走拷贝，改用 **CDP 协议直接注入 `auth_token` 明文**——Chrome 用自己的方式重新加密存储（合法），X 认这个 token 即视为登录态。一次注入，永久复用。
+
+1. **启动空白 CDP Chrome**（项目目录 PowerShell）：
+   ```powershell
+   .\scripts\start_chrome_cdp.bat --no-system
+   ```
+   CDP Chrome + GUI 一起起来，**窗口留着别关**。
+
+2. **从日常 Chrome 复制 `auth_token` 明文**：
+   日常 Chrome 打开 `https://x.com`（确认登录态）→ `F12` → **Application** → **Storage → Cookies → `https://x.com`** → 找 `auth_token` → 双击 **Value** → `Ctrl+A` 全选 → `Ctrl+C`。
+
+3. **注入**（**另开一个 PowerShell 窗口**）：
+   ```powershell
+   cd outreach-hub
+   uv run python scripts\inject_x_cookie.py '粘贴auth_token'
+   ```
+   脚本连 CDP Chrome、注入 token、打开 x.com 验证。若发 DM 时报 403/CSRF，再从 Cookies 复制 `ct0` 作为第二个参数。
+
+4. 弹出的 x.com 出现**信息流/头像**即成功 → 关掉注入脚本窗口（CDP Chrome 保留），回 GUI 点「▶ 开始发送」→「已登录就绪」。
+
+> - 注入后直接双击 `start.bat` 启动即可复用（脚本已写 `.initialized` 标志，下次不再拷贝覆盖）。**别用 `--refresh`**，会冲掉注入的 token。
+> - `auth_token` 有效期约 1 年，基本一次性操作。token 失效后重新从日常 Chrome 复制注入即可。
 
 ## 数据流
 
